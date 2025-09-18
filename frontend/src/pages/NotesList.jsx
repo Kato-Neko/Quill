@@ -99,9 +99,9 @@ export default function NotesList() {
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="text-sidebar-foreground hover:bg-sidebar-accent"
             >
-              <Menu className="h-5 w-5" />
+              <img src="/Quill.svg" alt="Quill" className="h-5 w-5" />
             </Button>
-            {sidebarOpen && <h1 className="text-xl font-bold text-sidebar-foreground">Notes</h1>}
+            {sidebarOpen && <h1 className="text-xl font-bold text-sidebar-foreground">Quill</h1>}
           </div>
         </div>
 
