@@ -5,6 +5,13 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Link, useParams, useNavigate } from "react-router-dom"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 const categories = ["Work", "Personal", "Learning", "Ideas"]
 const colors = [
@@ -74,15 +81,8 @@ export default function NotePage() {
     navigate("/")
   }
 
-  console.log("NotePage rendering - noteId:", noteId, "title:", title)
-
   return (
     <div className="min-h-screen bg-background">
-      {/* Debug info */}
-      <div className="bg-red-100 p-2 text-sm">
-        Debug: noteId={noteId}, title={title || "empty"}
-      </div>
-      
       {/* Header */}
       <header className="border-b border-border p-4">
         <div className="flex items-center justify-between max-w-4xl mx-auto">
@@ -109,9 +109,33 @@ export default function NotePage() {
               <Palette className="h-5 w-5" />
             </Button>
 
-            <Button variant="ghost" size="icon">
-              <MoreVertical className="h-5 w-5" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <MoreVertical className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => console.log("Pin note:", noteId)}>
+                  <Pin className="h-4 w-4 mr-2" />
+                  {isPinned ? "Unpin" : "Pin"} Note
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => console.log("Archive note:", noteId)}>
+                  <Archive className="h-4 w-4 mr-2" />
+                  Archive
+                </DropdownMenuItem>
+                {noteId && (
+                  <DropdownMenuItem 
+                    onClick={handleDelete}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Button onClick={handleSave} className="ml-2">
               <Save className="h-4 w-4 mr-2" />

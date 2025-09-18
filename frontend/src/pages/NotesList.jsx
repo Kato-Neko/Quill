@@ -1,12 +1,19 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Plus, StickyNote, Archive, Trash2, Star, Menu, MoreVertical, Edit3 } from "lucide-react"
+import { Search, Plus, StickyNote, Archive, Trash2, Star, Menu, MoreVertical, Edit3, Pin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Link } from "react-router-dom"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 // Sample notes data
 const sampleNotes = [
@@ -226,9 +233,35 @@ function NoteCard({ note }) {
                 <Edit3 className="h-4 w-4" />
               </Button>
             </Link>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <MoreVertical className="h-4 w-4" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => console.log("Pin note:", note.id)}>
+                  <Pin className="h-4 w-4 mr-2" />
+                  {note.isPinned ? "Unpin" : "Pin"} Note
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => console.log("Edit note:", note.id)}>
+                  <Edit3 className="h-4 w-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => console.log("Archive note:", note.id)}>
+                  <Archive className="h-4 w-4 mr-2" />
+                  Archive
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => console.log("Delete note:", note.id)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
