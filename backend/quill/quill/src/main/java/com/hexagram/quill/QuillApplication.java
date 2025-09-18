@@ -7,6 +7,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class QuillApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(QuillApplication.class, args);
-		System.out.println("Quill Note App Running Successfully!");
+		System.out.println("Quill Notes App Running Successfully!");
 	}
 }
