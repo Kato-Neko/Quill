@@ -39,3 +39,9 @@ build/
 
 ### Env files ###
 .env
+.env.local
+.env.*.local
+
+### Application properties with sensitive data ###
+application-local.properties
+application-prod.properties
