@@ -18,22 +18,11 @@ public interface NoteRepository extends JpaRepository<Note, Long> {
      * @param searchTerm the term to search for
      * @return list of notes matching the search criteria
      */
-    @Query("SELECT n FROM Note n WHERE " +
-           "LOWER(n.title) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
-           "LOWER(n.content) LIKE LOWER(CONCAT('%', :searchTerm, '%'))")
-    List<Note> findByTitleOrContentContainingIgnoreCase(@Param("searchTerm") String searchTerm);
-    
-    /**
-     * Search notes by title or content with pagination (case-insensitive)
-     * @param searchTerm the term to search for
-     * @param pageable pagination information
-     * @return page of notes matching the search criteria
-     */
-    @Query("SELECT n FROM Note n WHERE " +
-           "LOWER(n.title) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
-           "LOWER(n.content) LIKE LOWER(CONCAT('%', :searchTerm, '%'))")
-    Page<Note> findByTitleOrContentContainingIgnoreCase(@Param("searchTerm") String searchTerm, Pageable pageable);
-    
+    Page<Note> findByTitleContainingIgnoreCaseOrContentContainingIgnoreCase(String title, String content, Pageable pageable);
+
+    // The List-based search is also possible with a derived query if needed
+    // List<Note> findByTitleContainingIgnoreCaseOrContentContainingIgnoreCase(String title, String content);
+
     /**
      * Find notes by title containing the search term (case-insensitive)
      * @param title the title to search for
@@ -72,5 +61,6 @@ public interface NoteRepository extends JpaRepository<Note, Long> {
      * @param pageable pagination information
      * @return page of notes ordered by update date descending
      */
+
     Page<Note> findAllByOrderByUpdatedAtDesc(Pageable pageable);
 }

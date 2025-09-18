@@ -23,6 +23,7 @@ public class Note {
     
     @NotNull(message = "Content cannot be null")
     @Size(min = 1, max = 10000, message = "Content must be between 1 and 10000 characters")
+    @Lob
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")
     private String content;
     
