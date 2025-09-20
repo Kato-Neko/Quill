@@ -38,4 +38,22 @@ public class NoteController {
         Note createdNote = noteService.createNote(note);
         return new ResponseEntity<>(createdNote, HttpStatus.CREATED);
     }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Note> getNoteById(@PathVariable Long id) {
+        Note note = noteService.getNoteById(id);
+        return ResponseEntity.ok(note);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<Note> updateNote(@PathVariable Long id, @Valid @RequestBody Note noteDetails) {
+        Note updatedNote = noteService.updateNote(id, noteDetails);
+        return ResponseEntity.ok(updatedNote);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteNote(@PathVariable Long id) {
+        noteService.deleteNote(id);
+        return ResponseEntity.noContent().build();
+    }
 }
