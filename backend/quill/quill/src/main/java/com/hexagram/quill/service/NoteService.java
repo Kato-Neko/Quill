@@ -38,4 +38,40 @@ public class NoteService {
     public Note createNote(Note note) {
         return noteRepository.save(note);
     }
+
+    /**
+     * Retrieves a single note by its ID.
+     *
+     * @param id The ID of the note.
+     * @return The note object.
+     * @throws java.util.NoSuchElementException if note not found.
+     */
+    public Note getNoteById(Long id) {
+        return noteRepository.findById(id).orElseThrow();
+    }
+
+    /**
+     * Updates an existing note.
+     *
+     * @param id The ID of the note to update.
+     * @param noteDetails The note object with updated details.
+     * @return The updated note.
+     * @throws java.util.NoSuchElementException if note not found.
+     */
+    public Note updateNote(Long id, Note noteDetails) {
+        Note note = getNoteById(id);
+        note.setTitle(noteDetails.getTitle());
+        note.setContent(noteDetails.getContent());
+        // `updatedAt` will be handled by @UpdateTimestamp
+        return noteRepository.save(note);
+    }
+
+    /**
+     * Deletes a note by its ID.
+     *
+     * @param id The ID of the note to delete.
+     */
+    public void deleteNote(Long id) {
+        noteRepository.deleteById(id);
+    }
 }

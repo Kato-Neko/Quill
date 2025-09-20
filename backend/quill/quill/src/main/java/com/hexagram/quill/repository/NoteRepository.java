@@ -17,6 +17,8 @@ public interface NoteRepository extends JpaRepository<Note, Long> {
      * Search notes by title or content containing the search term (case-insensitive)
      * @param title the term to search for in the title
      * @param content the term to search for in the content
+     * @param title    the term to search for in the title
+     * @param content  the term to search for in the content
      * @param pageable pagination information
      * @return a page of notes matching the search criteria
      */
