@@ -26,6 +26,9 @@ public class Note {
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")
     private String content;
     
+    @Column(name = "category", length = 50)
+    private String category;
+    
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -68,6 +71,14 @@ public class Note {
         this.content = content;
     }
     
+    public String getCategory() {
+        return category;
+    }
+    
+    public void setCategory(String category) {
+        this.category = category;
+    }
+    
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -90,6 +101,7 @@ public class Note {
                 "id=" + id +
                 ", title='" + title + '\'' +
                 ", content='" + content + '\'' +
+                ", category='" + category + '\'' +
                 ", createdAt=" + createdAt +
                 ", updatedAt=" + updatedAt +
                 '}';

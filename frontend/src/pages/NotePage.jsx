@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { ArrowLeft, Save, MoreVertical, Pin, Archive, Trash2, Palette } from "lucide-react"
+import { ArrowLeft, Save, MoreVertical, Archive, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,36 +14,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 const categories = ["Work", "Personal", "Learning", "Ideas"]
-const colors = [
-  { name: "Default", value: "default", bg: "bg-card" },
-  { name: "Yellow", value: "yellow", bg: "bg-yellow-100 dark:bg-yellow-900/20" },
-  { name: "Green", value: "green", bg: "bg-green-100 dark:bg-green-900/20" },
-  { name: "Blue", value: "blue", bg: "bg-blue-100 dark:bg-blue-900/20" },
-  { name: "Pink", value: "pink", bg: "bg-pink-100 dark:bg-pink-900/20" },
-  { name: "Purple", value: "purple", bg: "bg-purple-100 dark:bg-purple-900/20" },
-]
-
-// Sample note data - in a real app, this would come from your backend
-const sampleNotes = [
-  {
-    id: "1",
-    title: "Project Ideas",
-    content: "Build a notes app with React\nAdd search functionality\nImplement categories\nDark mode support",
-    category: "Work",
-    isPinned: true,
-    color: "default",
-    createdAt: "2024-01-15",
-  },
-  {
-    id: "2",
-    title: "Shopping List",
-    content: "• Milk\n• Bread\n• Eggs\n• Coffee beans\n• Apples",
-    category: "Personal",
-    isPinned: false,
-    color: "yellow",
-    createdAt: "2024-01-14",
-  },
-]
 
 export default function NotePage() {
   const params = useParams()
@@ -53,32 +23,116 @@ export default function NotePage() {
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
   const [category, setCategory] = useState("")
-  const [selectedColor, setSelectedColor] = useState("default")
-  const [isPinned, setIsPinned] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  // API base URL - adjust this to your backend URL
+  const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api"
+
   useEffect(() => {
     if (noteId) {
-      // Edit existing note
-      const note = sampleNotes.find((n) => n.id === noteId)
-      if (note) {
-        setTitle(note.title)
-        setContent(note.content)
-        setCategory(note.category)
-        setSelectedColor(note.color)
-        setIsPinned(note.isPinned)
-      }
+      // Fetch existing note for editing
+      fetchNote()
     }
   }, [noteId])
 
-  const selectedColorBg = colors.find((color) => color.value === selectedColor)?.bg || "bg-card"
-
-  const handleSave = () => {
-    console.log("Saving note:", { id: noteId, title, content, category, selectedColor, isPinned })
-    navigate("/")
+  const fetchNote = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch(`${API_BASE_URL}/notes/${noteId}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch note')
+      }
+      const note = await response.json()
+      setTitle(note.title || "")
+      setContent(note.content || "")
+      setCategory(note.category || "")
+    } catch (err) {
+      setError(err.message)
+      console.error('Error fetching note:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleDelete = () => {
-    console.log("Deleting note:", noteId)
-    navigate("/")
+  const handleSave = async () => {
+    if (!title.trim() || !content.trim()) {
+      setError("Title and content cannot be empty")
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      const noteData = {
+        title: title.trim(),
+        content: content.trim(),
+        category: category || null
+      }
+
+      const url = noteId 
+        ? `${API_BASE_URL}/notes/${noteId}` 
+        : `${API_BASE_URL}/notes`
+      
+      const method = noteId ? 'PUT' : 'POST'
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(noteData)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`)
+      }
+
+      // Success - navigate back to notes list
+      navigate("/")
+    } catch (err) {
+      setError(err.message)
+      console.error('Error saving note:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!noteId) return
+
+    if (!window.confirm('Are you sure you want to delete this note?')) {
+      return
+    }
+
+    try {
+      setLoading(true)
+      const response = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete note')
+      }
+
+      // Success - navigate back to notes list
+      navigate("/")
+    } catch (err) {
+      setError(err.message)
+      console.error('Error deleting note:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading && !noteId) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">Loading...</div>
+      </div>
+    )
   }
 
   return (
@@ -96,32 +150,14 @@ export default function NotePage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsPinned(!isPinned)}
-              className={isPinned ? "text-primary" : ""}
-            >
-              <Pin className={`h-5 w-5 ${isPinned ? "fill-current" : ""}`} />
-            </Button>
-
-            <Button variant="ghost" size="icon" onClick={() => setSelectedColor("default")}>
-              <Palette className="h-5 w-5" />
-            </Button>
-
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
+                <Button variant="ghost" size="icon" disabled={loading}>
                   <MoreVertical className="h-5 w-5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => console.log("Pin note:", noteId)}>
-                  <Pin className="h-4 w-4 mr-2" />
-                  {isPinned ? "Unpin" : "Pin"} Note
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => console.log("Archive note:", noteId)}>
+                <DropdownMenuItem onClick={() => console.log("Archive note:", noteId)} disabled={loading}>
                   <Archive className="h-4 w-4 mr-2" />
                   Archive
                 </DropdownMenuItem>
@@ -129,6 +165,7 @@ export default function NotePage() {
                   <DropdownMenuItem 
                     onClick={handleDelete}
                     className="text-destructive focus:text-destructive"
+                    disabled={loading}
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete
@@ -137,24 +174,44 @@ export default function NotePage() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button onClick={handleSave} className="ml-2">
-              <Save className="h-4 w-4 mr-2" />
-              Save
+            <Button 
+              onClick={handleSave} 
+              className="ml-2"
+              disabled={loading || !title.trim() || !content.trim()}
+            >
+              {loading ? (
+                <>Saving...</>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save
+                </>
+              )}
             </Button>
           </div>
         </div>
       </header>
 
+      {/* Error Display */}
+      {error && (
+        <div className="mx-auto max-w-4xl p-4">
+          <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-md p-3">
+            {error}
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <main className="p-6">
         <div className="max-w-4xl mx-auto">
-          <div className={`${selectedColorBg} rounded-lg border border-border p-6 shadow-sm`}>
+          <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
             {/* Title Input */}
             <Input
               placeholder="Note title..."
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="text-xl font-semibold border-none bg-transparent p-0 mb-4 placeholder:text-muted-foreground focus-visible:ring-0"
+              disabled={loading}
             />
 
             {/* Category Selection */}
@@ -162,7 +219,8 @@ export default function NotePage() {
               <select 
                 value={category} 
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-48 bg-transparent border border-border rounded px-3 py-2"
+                className="w-48 bg-transparent border border-border rounded px-3 py-2 disabled:bg-muted"
+                disabled={loading}
               >
                 <option value="">Select category</option>
                 {categories.map((cat) => (
@@ -178,7 +236,8 @@ export default function NotePage() {
               placeholder="Start writing your note..."
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="min-h-[400px] border-none bg-transparent p-0 resize-none placeholder:text-muted-foreground focus-visible:ring-0 text-base leading-relaxed"
+              className="min-h-[400px] border-none bg-transparent p-0 resize-none placeholder:text-muted-foreground focus-visible:ring-0 text-base leading-relaxed disabled:bg-muted"
+              disabled={loading}
             />
 
             {/* Footer Info */}
@@ -189,19 +248,17 @@ export default function NotePage() {
                     {category}
                   </Badge>
                 )}
-                {isPinned && (
-                  <Badge variant="outline" className="text-xs">
-                    Pinned
-                  </Badge>
-                )}
               </div>
-              <span className="text-xs text-muted-foreground">Last edited: {new Date().toLocaleDateString()}</span>
+              <span className="text-xs text-muted-foreground">
+                {noteId ? "Last edited: " : "Created: "}
+                {new Date().toLocaleDateString()}
+              </span>
             </div>
           </div>
 
           {/* Quick Actions */}
           <div className="flex items-center justify-center gap-4 mt-6">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" disabled={loading}>
               <Archive className="h-4 w-4 mr-2" />
               Archive
             </Button>
@@ -211,6 +268,7 @@ export default function NotePage() {
                 size="sm"
                 className="text-destructive hover:text-destructive bg-transparent"
                 onClick={handleDelete}
+                disabled={loading}
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 Delete
@@ -222,4 +280,3 @@ export default function NotePage() {
     </div>
   )
 }
-  
