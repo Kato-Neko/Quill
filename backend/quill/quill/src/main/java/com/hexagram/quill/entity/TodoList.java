@@ -7,10 +7,11 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
-@Table(name = "notes")
-public class Note {
+@Table(name = "todo_lists")
+public class TodoList {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -21,10 +22,7 @@ public class Note {
     @Column(name = "title", nullable = false, length = 255)
     private String title;
 
-    @Size(max = 10000, message = "Content must be less than 10000 characters")
-    @Column(name = "content", columnDefinition = "TEXT")
-    private String content;
-
+    @Size(max = 50, message = "Category must be less than 50 characters")
     @Column(name = "category", length = 50)
     private String category;
 
@@ -48,14 +46,17 @@ public class Note {
     @Column(name = "is_pinned", nullable = false)
     private Boolean isPinned = false;
 
+    @Column(name = "todos", columnDefinition = "TEXT")
+    private String todos; // JSON string for todo items
+
     // Default constructor
-    public Note() {
+    public TodoList() {
     }
 
     // Constructor with required fields
-    public Note(String title, String content) {
+    public TodoList(String title, String category) {
         this.title = title;
-        this.content = content;
+        this.category = category;
     }
 
     // Getters and Setters
@@ -73,14 +74,6 @@ public class Note {
 
     public void setTitle(String title) {
         this.title = title;
-    }
-
-    public String getContent() {
-        return content;
-    }
-
-    public void setContent(String content) {
-        this.content = content;
     }
 
     public String getCategory() {
@@ -139,12 +132,19 @@ public class Note {
         this.isPinned = isPinned;
     }
 
+    public String getTodos() {
+        return todos;
+    }
+
+    public void setTodos(String todos) {
+        this.todos = todos;
+    }
+
     @Override
     public String toString() {
-        return "Note{" +
+        return "TodoList{" +
                 "id=" + id +
                 ", title='" + title + '\'' +
-                ", content='" + content + '\'' +
                 ", category='" + category + '\'' +
                 ", createdAt=" + createdAt +
                 ", updatedAt=" + updatedAt +
@@ -152,6 +152,7 @@ public class Note {
                 ", starred=" + starred +
                 ", deleted=" + deleted +
                 ", isPinned=" + isPinned +
+                ", todos='" + todos + '\'' +
                 '}';
     }
 }
