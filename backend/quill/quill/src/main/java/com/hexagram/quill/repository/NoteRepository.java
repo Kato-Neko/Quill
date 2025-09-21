@@ -15,56 +15,39 @@ public interface NoteRepository extends JpaRepository<Note, Long> {
     
     /**
      * Search notes by title or content containing the search term (case-insensitive)
-     * @param title the term to search for in the title
-     * @param content the term to search for in the content
-     * @param title    the term to search for in the title
-     * @param content  the term to search for in the content
+     * 
+     * @param searchTerm the term to search for in both title and content
      * @param pageable pagination information
      * @return a page of notes matching the search criteria
      */
-    Page<Note> findByTitleContainingIgnoreCaseOrContentContainingIgnoreCase(String title, String content, Pageable pageable);
+    @Query("SELECT n FROM Note n WHERE " +
+           "LOWER(n.title) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+           "LOWER(n.content) LIKE LOWER(CONCAT('%', :searchTerm, '%'))")
+    Page<Note> findByTitleContainingIgnoreCaseOrContentContainingIgnoreCase(
+        @Param("searchTerm") String searchTerm, Pageable pageable);
 
-    // The List-based search is also possible with a derived query if needed
-    // List<Note> findByTitleContainingIgnoreCaseOrContentContainingIgnoreCase(String title, String content);
-
-    /**
-     * Find notes by title containing the search term (case-insensitive)
-     * @param title the title to search for
-     * @return list of notes with matching titles
-     */
-    List<Note> findByTitleContainingIgnoreCase(String title);
-    
-    /**
-     * Find notes by content containing the search term (case-insensitive)
-     * @param content the content to search for
-     * @return list of notes with matching content
-     */
-    List<Note> findByContentContainingIgnoreCase(String content);
-    
-    /**
-     * Find all notes ordered by creation date (newest first)
-     * @return list of notes ordered by creation date descending
-     */
-    List<Note> findAllByOrderByCreatedAtDesc();
-    
-    /**
-     * Find all notes with pagination ordered by creation date (newest first)
-     * @param pageable pagination information
-     * @return page of notes ordered by creation date descending
-     */
-    Page<Note> findAllByOrderByCreatedAtDesc(Pageable pageable);
-    
     /**
      * Find all notes ordered by update date (most recently updated first)
-     * @return list of notes ordered by update date descending
-     */
-    List<Note> findAllByOrderByUpdatedAtDesc();
-    
-    /**
-     * Find all notes with pagination ordered by update date (most recently updated first)
+     * 
      * @param pageable pagination information
      * @return page of notes ordered by update date descending
      */
-
     Page<Note> findAllByOrderByUpdatedAtDesc(Pageable pageable);
+
+    /**
+     * Count notes by category (case-insensitive)
+     * 
+     * @param category the category to count
+     * @return number of notes in the specified category
+     */
+    long countByCategoryIgnoreCase(String category);
+
+    /**
+     * Find notes by category (case-insensitive)
+     * 
+     * @param category the category to filter by
+     * @param pageable pagination information
+     * @return page of notes in the specified category
+     */
+    Page<Note> findByCategoryIgnoreCase(String category, Pageable pageable);
 }

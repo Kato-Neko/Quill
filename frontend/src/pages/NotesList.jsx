@@ -1,12 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Search, Plus, StickyNote, Archive, Trash2, Star, Menu, MoreVertical, Edit3, Pin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,66 +15,98 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-// Sample notes data
-const sampleNotes = [
-  {
-    id: "1",
-    title: "Project Ideas",
-    content: "Build a notes app with React\nAdd search functionality\nImplement categories\nDark mode support",
-    category: "Work",
-    isPinned: true,
-    createdAt: "2024-01-15",
-  },
-  {
-    id: "2",
-    title: "Shopping List",
-    content: "• Milk\n• Bread\n• Eggs\n• Coffee beans\n• Apples",
-    category: "Personal",
-    isPinned: false,
-    createdAt: "2024-01-14",
-  },
-  {
-    id: "3",
-    title: "Meeting Notes",
-    content: "Discussed Q1 goals\nReview budget allocation\nSchedule follow-up meeting\nAction items for team",
-    category: "Work",
-    isPinned: false,
-    createdAt: "2024-01-13",
-  },
-  {
-    id: "4",
-    title: "Book Recommendations",
-    content: "The Design of Everyday Things\nAtomic Habits\nClean Code\nThe Pragmatic Programmer",
-    category: "Learning",
-    isPinned: true,
-    createdAt: "2024-01-12",
-  },
-  {
-    id: "5",
-    title: "Travel Plans",
-    content: "Visit Japan in spring\nBook flights early\nResearch accommodations\nLearn basic Japanese phrases",
-    category: "Personal",
-    isPinned: false,
-    createdAt: "2024-01-11",
-  },
-  {
-    id: "6",
-    title: "Code Snippets",
-    content: "React useEffect cleanup\nCSS Grid layouts\nJavaScript array methods\nTailwind responsive design",
-    category: "Work",
-    isPinned: false,
-    createdAt: "2024-01-10",
-  },
-]
+// API base URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api"
 
 const categories = ["All Notes", "Work", "Personal", "Learning"]
 
 export default function NotesList() {
+  const [notes, setNotes] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All Notes")
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const navigate = useNavigate()
 
-  const filteredNotes = sampleNotes.filter((note) => {
+  // Fetch notes from API
+  useEffect(() => {
+    fetchNotes()
+  }, [searchQuery, selectedCategory])
+
+  const fetchNotes = async () => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      // Build search term - if category is not "All Notes", include it in search
+      let searchTerm = ""
+      if (searchQuery.trim()) {
+        searchTerm = searchQuery.trim()
+      } else if (selectedCategory !== "All Notes") {
+        // If no search query but category selected, search by category
+        searchTerm = selectedCategory
+      }
+
+      const url = searchTerm
+        ? `${API_BASE_URL}/notes?search=${encodeURIComponent(searchTerm)}&size=100`
+        : `${API_BASE_URL}/notes?size=100`
+      
+      const response = await fetch(url)
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch notes: ${response.status}`)
+      }
+      
+      const data = await response.json()
+      // Transform API data to match your component structure
+      const transformedNotes = (data.content || []).map(note => ({
+        id: note.id.toString(),
+        title: note.title,
+        content: note.content,
+        category: note.category || "Personal",
+        isPinned: false, // Since we removed pinning, default to false
+        createdAt: new Date(note.createdAt).toISOString().split('T')[0]
+      }))
+      
+      setNotes(transformedNotes)
+    } catch (err) {
+      setError(err.message)
+      console.error('Error fetching notes:', err)
+      setNotes([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDelete = async (noteId) => {
+    if (!window.confirm('Are you sure you want to delete this note?')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete note')
+      }
+
+      // Refresh the notes list
+      fetchNotes()
+    } catch (err) {
+      setError(err.message)
+      console.error('Error deleting note:', err)
+    }
+  }
+
+  const handlePinToggle = async (noteId) => {
+    // Since we removed pinning, just log for now
+    console.log("Pin toggle not implemented:", noteId)
+  }
+
+  const filteredNotes = notes.filter((note) => {
     const matchesSearch =
       note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       note.content.toLowerCase().includes(searchQuery.toLowerCase())
@@ -84,6 +116,18 @@ export default function NotesList() {
 
   const pinnedNotes = filteredNotes.filter((note) => note.isPinned)
   const regularNotes = filteredNotes.filter((note) => !note.isPinned)
+
+  // Loading state
+  if (loading && notes.length === 0) {
+    return (
+      <div className="flex h-screen bg-background items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading your notes...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-screen bg-background">
@@ -165,6 +209,24 @@ export default function NotesList() {
           </div>
         </header>
 
+        {/* Error Display */}
+        {error && (
+          <div className="p-4 bg-destructive/10 border-b border-destructive/30 text-destructive text-sm">
+            {error}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setError(null)
+                fetchNotes()
+              }}
+              className="ml-2 h-6 px-2"
+            >
+              Retry
+            </Button>
+          </div>
+        )}
+
         {/* Notes Grid */}
         <main className="flex-1 overflow-auto p-6">
           <div className="max-w-6xl mx-auto">
@@ -174,7 +236,7 @@ export default function NotesList() {
                 <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">Pinned</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {pinnedNotes.map((note) => (
-                    <NoteCard key={note.id} note={note} />
+                    <NoteCard key={note.id} note={note} onDelete={handleDelete} onPinToggle={handlePinToggle} />
                   ))}
                 </div>
               </div>
@@ -186,18 +248,28 @@ export default function NotesList() {
                 <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">Others</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {regularNotes.map((note) => (
-                    <NoteCard key={note.id} note={note} />
+                    <NoteCard key={note.id} note={note} onDelete={handleDelete} onPinToggle={handlePinToggle} />
                   ))}
                 </div>
               </div>
             )}
 
-            {filteredNotes.length === 0 && (
+            {loading && notes.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Loading your notes...</p>
+              </div>
+            ) : filteredNotes.length === 0 && !loading ? (
               <div className="text-center py-12">
                 <StickyNote className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">No notes found</p>
+                <p className="text-muted-foreground">
+                  {searchQuery || selectedCategory !== "All Notes" 
+                    ? "No notes found" 
+                    : "No notes yet. Create your first note!"
+                  }
+                </p>
               </div>
-            )}
+            ) : null}
           </div>
         </main>
       </div>
@@ -215,8 +287,13 @@ export default function NotesList() {
   )
 }
 
-function NoteCard({ note }) {
+function NoteCard({ note, onDelete, onPinToggle }) {
   const [isHovered, setIsHovered] = useState(false)
+  const navigate = useNavigate()
+
+  const handleEdit = () => {
+    navigate(`/note/${note.id}`)
+  }
 
   return (
     <Card
@@ -226,13 +303,21 @@ function NoteCard({ note }) {
     >
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-2">
-          <h3 className="font-medium text-card-foreground line-clamp-1">{note.title}</h3>
+          <h3 
+            className="font-medium text-card-foreground line-clamp-1 cursor-pointer hover:underline"
+            onClick={handleEdit}
+          >
+            {note.title}
+          </h3>
           <div className={`flex gap-1 transition-opacity duration-200 ${isHovered ? "opacity-100" : "opacity-0"}`}>
-            <Link to={`/note/${note.id}`}>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <Edit3 className="h-4 w-4" />
-              </Button>
-            </Link>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8"
+              onClick={handleEdit}
+            >
+              <Edit3 className="h-4 w-4" />
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -240,11 +325,11 @@ function NoteCard({ note }) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => console.log("Pin note:", note.id)}>
+                <DropdownMenuItem onClick={() => onPinToggle(note.id)}>
                   <Pin className="h-4 w-4 mr-2" />
                   {note.isPinned ? "Unpin" : "Pin"} Note
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => console.log("Edit note:", note.id)}>
+                <DropdownMenuItem onClick={handleEdit}>
                   <Edit3 className="h-4 w-4 mr-2" />
                   Edit
                 </DropdownMenuItem>
@@ -254,7 +339,7 @@ function NoteCard({ note }) {
                   Archive
                 </DropdownMenuItem>
                 <DropdownMenuItem 
-                  onClick={() => console.log("Delete note:", note.id)}
+                  onClick={() => onDelete(note.id)}
                   className="text-destructive focus:text-destructive"
                 >
                   <Trash2 className="h-4 w-4 mr-2" />
@@ -283,4 +368,3 @@ function NoteCard({ note }) {
     </Card>
   )
 }
-  
