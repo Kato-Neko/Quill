@@ -1,31 +1,36 @@
 package com.hexagram.quill.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+/**
+ * DTO for individual todo items within a todo list.
+ */
 public class TodoItem {
 
-    private String id;
+    @NotBlank(message = "Todo item text cannot be blank")
+    @Size(max = 500, message = "Todo item text must be less than 500 characters")
     private String text;
+
     private Boolean completed = false;
 
     // Default constructor
     public TodoItem() {
     }
 
-    // Constructor
-    public TodoItem(String id, String text, Boolean completed) {
-        this.id = id;
+    // Constructor with text
+    public TodoItem(String text) {
+        this.text = text;
+        this.completed = false;
+    }
+
+    // Constructor with text and completed status
+    public TodoItem(String text, Boolean completed) {
         this.text = text;
         this.completed = completed;
     }
 
     // Getters and Setters
-    public String getId() {
-        return id;
-    }
-
-    public void setId(String id) {
-        this.id = id;
-    }
-
     public String getText() {
         return text;
     }
@@ -45,8 +50,7 @@ public class TodoItem {
     @Override
     public String toString() {
         return "TodoItem{" +
-                "id=" + id +
-                ", text='" + text + '\'' +
+                "text='" + text + '\'' +
                 ", completed=" + completed +
                 '}';
     }

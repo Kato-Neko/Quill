@@ -1,45 +1,47 @@
 package com.hexagram.quill.dto;
 
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * DTO for TodoList entity.
+ */
 public class TodoListDTO {
 
     private Long id;
 
-    @NotNull(message = "Title cannot be null")
+    @NotBlank(message = "Title cannot be blank")
     @Size(min = 1, max = 255, message = "Title must be between 1 and 255 characters")
     private String title;
 
     @Size(max = 50, message = "Category must be less than 50 characters")
     private String category;
 
-    private List<TodoItem> todos;
+    private LocalDateTime createdAt;
 
-    private Boolean starred = false;
+    private LocalDateTime updatedAt;
 
     private Boolean archived = false;
+
+    private Boolean starred = false;
 
     private Boolean deleted = false;
 
     private Boolean isPinned = false;
 
-    private LocalDateTime createdAt;
-
-    private LocalDateTime updatedAt;
+    private List<TodoItem> todos;
 
     // Default constructor
     public TodoListDTO() {
     }
 
-    // Constructor
-    public TodoListDTO(String title, String category, List<TodoItem> todos) {
+    // Constructor with required fields
+    public TodoListDTO(String title, String category) {
         this.title = title;
         this.category = category;
-        this.todos = todos;
     }
 
     // Getters and Setters
@@ -67,20 +69,20 @@ public class TodoListDTO {
         this.category = category;
     }
 
-    public List<TodoItem> getTodos() {
-        return todos;
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
     }
 
-    public void setTodos(List<TodoItem> todos) {
-        this.todos = todos;
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
     }
 
-    public Boolean getStarred() {
-        return starred;
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
     }
 
-    public void setStarred(Boolean starred) {
-        this.starred = starred;
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public Boolean getArchived() {
@@ -89,6 +91,14 @@ public class TodoListDTO {
 
     public void setArchived(Boolean archived) {
         this.archived = archived;
+    }
+
+    public Boolean getStarred() {
+        return starred;
+    }
+
+    public void setStarred(Boolean starred) {
+        this.starred = starred;
     }
 
     public Boolean getDeleted() {
@@ -107,20 +117,12 @@ public class TodoListDTO {
         this.isPinned = isPinned;
     }
 
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
+    public List<TodoItem> getTodos() {
+        return todos;
     }
 
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public LocalDateTime getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
+    public void setTodos(List<TodoItem> todos) {
+        this.todos = todos;
     }
 
     @Override
@@ -129,13 +131,13 @@ public class TodoListDTO {
                 "id=" + id +
                 ", title='" + title + '\'' +
                 ", category='" + category + '\'' +
-                ", todos=" + todos +
-                ", starred=" + starred +
-                ", archived=" + archived +
-                ", deleted=" + deleted +
-                ", isPinned=" + isPinned +
                 ", createdAt=" + createdAt +
                 ", updatedAt=" + updatedAt +
+                ", archived=" + archived +
+                ", starred=" + starred +
+                ", deleted=" + deleted +
+                ", isPinned=" + isPinned +
+                ", todos=" + todos +
                 '}';
     }
 }
