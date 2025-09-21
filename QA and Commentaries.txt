@@ -1,0 +1,134 @@
+Page: Editing of existing note
+    Problems: 
+        1. Archiving Not working correctly.
+        2. Delete confirmation in localhost, should be a UI dialog box.
+
+Page: New note
+    Problem: Remove archive button should, that should be visible in editing note only.
+    Suggestions: Add a To Do List
+
+Page: Dashboard
+    Problems:
+        1. In adding of note (Select Category), there are 4 listed but there's only 3 navigation in side bar.
+        2. Some tabs is not yet working
+        3. For note cards display, pinning of not is not working as well as archiving. The same problem with delete -> Page: Editing of existing note number 2
+        4. No star action button on notes card display
+        5. Archive and trash are not accessible
+
+List of Features (to be checked)
+1. Dashboard / Main Page
+
+    Sidebar navigation with categories:
+    
+        All Notes
+        Work
+        Personal
+        Learning
+        Starred
+        Archive
+        Trash
+
+    Search bar to search notes.
+
+    Note cards display with:
+
+Title
+
+    Preview/snippet of content
+    Category label (chip/tag style)
+    Date created
+    Quick edit button (pencil icon)
+    Overflow menu (⋮) for more actions (though not fully functional yet).
+    Floating add note button (+) at the bottom right.
+
+2. New Note Page
+
+Title input field.
+
+    Category selection dropdown (Work, Personal, Learning, etc.). 
+    Content editor (plain text entry).
+    Save button in the top right.
+    Created date visible at the bottom.
+    Archive button (though this ideally belongs only on Edit Note page).
+
+3. Edit Note Page
+
+    Editable title field.
+    Editable category dropdown.
+    Content editing with spellcheck support (red underline for typos).
+    Save button to update note.
+    Archive button available.
+    Created date shown.
+    Category tag displayed at bottom.
+
+4. Note Management Features
+
+    Create a new note.
+    Edit an existing note.
+    Save notes.
+    Archive notes (though bugged in current implementation).
+    Delete notes (confirmation currently appears as browser default prompt).
+    Categorization of notes (Work, Personal, Learning).
+
+5. Visual / UX Features
+
+    Clean card-based layout for notes.
+    Minimalist interface with empty-state illustration and text: “No notes yet – Create your first note to get started!”.
+    Floating action button for quick note creation.
+    Sidebar for easy navigation.
+
+
+
+UX polish (quick wins)
+
+Empty states: friendly text and a “New note” CTA in each list.
+
+Toasts/snackbars for Save/Archive/Trash/Restore/Permanently delete.
+
+Autosave every 2–3s while editing; show “Saved • 3:42 PM”.
+
+Keyboard shortcuts: N (new), / (focus search), P (pin), S (star), E (edit), Del (trash).
+
+Search: debounce 250ms; highlight matches in cards.
+
+Sorting: Recent, A→Z, Pinned first (default).
+
+Checklist / To-Do: add a “Checklist” block type (checkbox markdown - [ ] works great).
+
+Confirmations as real modals: use a consistent AlertDialog component with primary/secondary buttons, escape to close.
+
+
+
+Addition Info: 
+
+Testing checklist
+
+    1. Create → Save → Appears in “All Notes” and correct category.
+
+    2. New screen shows no Archive/Trash.
+
+    3. Edit screen shows Archive/Trash; Archive sends note to Archive list and back via Unarchive.
+
+    4. Trash flow: move to trash → appears in Trash → Restore works → Delete forever uses modal and removes item.
+
+    5. Pinned shows a “Pinned” section; unpin moves it to Others.
+
+    6. Star toggle persists; “Starred” filter shows only starred actives.
+
+    7. Sidebar counts match the actual queries.
+
+    8. Search finds by title & body; category filters + search combine correctly.
+
+    9. Archive and Trash pages are routable and load even on refresh (deep links).
+
+    10. Keyboard shortcuts work and are announced in a help tooltip.
+
+
+
+Nice-to-haves
+
+    - Bulk actions (multi-select for archive/trash/pin/star).
+
+    - Note history (versions) and undo.
+
+    - Reminders/notifications.
