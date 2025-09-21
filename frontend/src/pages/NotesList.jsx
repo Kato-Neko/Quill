@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, Plus, StickyNote, Archive, Trash2, Star, Menu, MoreVertical, Edit3, Pin } from "lucide-react"
+import { Search, Plus, StickyNote, Archive, Trash2, Star, Menu, MoreVertical, Edit3, Pin, StarOff, Briefcase, User, BookOpen, Lightbulb, Home, CheckSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -14,11 +14,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 // API base URL
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api"
 
-const categories = ["All Notes", "Work", "Personal", "Learning"]
+const categories = ["All Notes", "Work", "Personal", "Learning", "Ideas"]
 
 export default function NotesList() {
   const [notes, setNotes] = useState([])
@@ -28,6 +39,8 @@ export default function NotesList() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [noteToDelete, setNoteToDelete] = useState(null)
   const navigate = useNavigate()
 
   // Debounce search function
@@ -68,12 +81,13 @@ export default function NotesList() {
         title: note.title,
         content: note.content,
         category: note.category || "Personal",
-        isPinned: false,
-        createdAt: new Date(note.createdAt).toLocaleDateString('en-US', { 
+        isPinned: note.isPinned || false,
+        isStarred: note.starred || false,
+        createdAt: note.createdAt ? new Date(note.createdAt).toLocaleDateString('en-US', { 
           year: 'numeric', 
           month: 'short', 
           day: 'numeric' 
-        })
+        }) : 'Unknown date'
       }))
       
       // Store all notes for category filtering
@@ -98,13 +112,16 @@ export default function NotesList() {
     }
   }
 
-  const handleDelete = async (noteId) => {
-    if (!window.confirm('Are you sure you want to delete this note?')) {
-      return
-    }
+  const handleDeleteClick = (noteId) => {
+    setNoteToDelete(noteId)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!noteToDelete) return
 
     try {
-      const response = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
+      const response = await fetch(`${API_BASE_URL}/notes/${noteToDelete}`, {
         method: 'DELETE'
       })
 
@@ -114,6 +131,8 @@ export default function NotesList() {
 
       // Refresh the notes list
       fetchNotes()
+      setDeleteDialogOpen(false)
+      setNoteToDelete(null)
     } catch (err) {
       setError(err.message)
       console.error('Error deleting note:', err)
@@ -121,8 +140,93 @@ export default function NotesList() {
   }
 
   const handlePinToggle = async (noteId) => {
-    // Since we removed pinning, just log for now
-    console.log("Pin toggle not implemented:", noteId)
+    try {
+      const response = await fetch(`${API_BASE_URL}/notes/${noteId}/pin`, {
+        method: 'POST'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to toggle pin status')
+      }
+
+      // Find the note and toggle its pinned status
+      const updatedNotes = notes.map(note => 
+        note.id === noteId 
+          ? { ...note, isPinned: !note.isPinned }
+          : note
+      )
+      setNotes(updatedNotes)
+      
+      // Also update allNotes for consistency
+      const updatedAllNotes = allNotes.map(note => 
+        note.id === noteId 
+          ? { ...note, isPinned: !note.isPinned }
+          : note
+      )
+      setAllNotes(updatedAllNotes)
+      
+      console.log("Pin toggle implemented:", noteId)
+    } catch (err) {
+      setError(err.message)
+      console.error('Error toggling pin:', err)
+    }
+  }
+
+  const handleStarToggle = async (noteId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/notes/${noteId}/star`, {
+        method: 'POST'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to toggle star status')
+      }
+
+      // Find the note and toggle its starred status
+      const updatedNotes = notes.map(note => 
+        note.id === noteId 
+          ? { ...note, isStarred: !note.isStarred }
+          : note
+      )
+      setNotes(updatedNotes)
+      
+      // Also update allNotes for consistency
+      const updatedAllNotes = allNotes.map(note => 
+        note.id === noteId 
+          ? { ...note, isStarred: !note.isStarred }
+          : note
+      )
+      setAllNotes(updatedAllNotes)
+      
+      console.log("Star toggle implemented:", noteId)
+    } catch (err) {
+      setError(err.message)
+      console.error('Error toggling star:', err)
+    }
+  }
+
+  const handleArchive = async (noteId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/notes/${noteId}/archive`, {
+        method: 'POST'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to archive note')
+      }
+
+      // Remove the note from the current list
+      const updatedNotes = notes.filter(note => note.id !== noteId)
+      setNotes(updatedNotes)
+      
+      const updatedAllNotes = allNotes.filter(note => note.id !== noteId)
+      setAllNotes(updatedAllNotes)
+      
+      console.log("Note archived:", noteId)
+    } catch (err) {
+      setError(err.message)
+      console.error('Error archiving note:', err)
+    }
   }
 
   // Filter notes based on category when search is empty
@@ -176,44 +280,78 @@ export default function NotesList() {
         </div>
 
         <nav className="flex-1 p-2">
-          {categories.map((category) => (
-            <Button
-              key={category}
-              variant={selectedCategory === category ? "default" : "ghost"}
-              className={`w-full justify-start mb-1 ${
-                selectedCategory === category
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent"
-              }`}
-              onClick={() => setSelectedCategory(category)}
-            >
-              <StickyNote className="h-4 w-4 mr-3" />
-              {sidebarOpen && category}
-            </Button>
-          ))}
+          {categories.map((category) => {
+            const getCategoryIcon = (cat) => {
+              switch (cat) {
+                case "All Notes":
+                  return <Home className="h-4 w-4 mr-3" />
+                case "Work":
+                  return <Briefcase className="h-4 w-4 mr-3" />
+                case "Personal":
+                  return <User className="h-4 w-4 mr-3" />
+                case "Learning":
+                  return <BookOpen className="h-4 w-4 mr-3" />
+                case "Ideas":
+                  return <Lightbulb className="h-4 w-4 mr-3" />
+                default:
+                  return <StickyNote className="h-4 w-4 mr-3" />
+              }
+            }
+
+            return (
+              <Button
+                key={category}
+                variant={selectedCategory === category ? "default" : "ghost"}
+                className={`w-full justify-start mb-1 ${
+                  selectedCategory === category
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent"
+                }`}
+                onClick={() => setSelectedCategory(category)}
+              >
+                {getCategoryIcon(category)}
+                {sidebarOpen && category}
+              </Button>
+            )
+          })}
 
           <div className="mt-6">
-            <Button
-              variant="ghost"
-              className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
-            >
-              <Star className="h-4 w-4 mr-3" />
-              {sidebarOpen && "Starred"}
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
-            >
-              <Archive className="h-4 w-4 mr-3" />
-              {sidebarOpen && "Archive"}
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
-            >
-              <Trash2 className="h-4 w-4 mr-3" />
-              {sidebarOpen && "Trash"}
-            </Button>
+            <Link to="/todo-lists">
+              <Button
+                variant="ghost"
+                className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
+              >
+                <CheckSquare className="h-4 w-4 mr-3 text-green-500" />
+                {sidebarOpen && "Todo Lists"}
+              </Button>
+            </Link>
+            <Link to="/favorites">
+              <Button
+                variant="ghost"
+                className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
+              >
+                <Star className="h-4 w-4 mr-3 text-yellow-500" />
+                {sidebarOpen && "Favorites"}
+              </Button>
+            </Link>
+            <Link to="/archive">
+              <Button
+                variant="ghost"
+                className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
+              >
+                <Archive className="h-4 w-4 mr-3 text-blue-500" />
+                {sidebarOpen && "Archive"}
+              </Button>
+            </Link>
+            <Link to="/trash">
+              <Button
+                variant="ghost"
+                className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
+              >
+                <Trash2 className="h-4 w-4 mr-3 text-red-500" />
+                {sidebarOpen && "Trash"}
+              </Button>
+            </Link>
           </div>
         </nav>
       </div>
@@ -292,7 +430,7 @@ export default function NotesList() {
                 <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">Pinned</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {pinnedNotes.map((note) => (
-                    <NoteCard key={note.id} note={note} onDelete={handleDelete} onPinToggle={handlePinToggle} />
+                    <NoteCard key={note.id} note={note} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onArchive={handleArchive} />
                   ))}
                 </div>
               </div>
@@ -306,7 +444,7 @@ export default function NotesList() {
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {regularNotes.map((note) => (
-                    <NoteCard key={note.id} note={note} onDelete={handleDelete} onPinToggle={handlePinToggle} />
+                    <NoteCard key={note.id} note={note} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onArchive={handleArchive} />
                   ))}
                 </div>
               </div>
@@ -346,11 +484,32 @@ export default function NotesList() {
           <Plus className="h-6 w-6" />
         </Button>
       </Link>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Note</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this note? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
 
-function NoteCard({ note, onDelete, onPinToggle }) {
+function NoteCard({ note, onDelete, onPinToggle, onStarToggle, onArchive }) {
   const [isHovered, setIsHovered] = useState(false)
   const navigate = useNavigate()
 
@@ -381,6 +540,18 @@ function NoteCard({ note, onDelete, onPinToggle }) {
             >
               <Edit3 className="h-4 w-4" />
             </Button>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8"
+              onClick={() => onStarToggle(note.id)}
+            >
+              {note.isStarred ? (
+                <Star className="h-4 w-4 fill-current text-yellow-500" />
+              ) : (
+                <StarOff className="h-4 w-4" />
+              )}
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -392,12 +563,20 @@ function NoteCard({ note, onDelete, onPinToggle }) {
                   <Pin className="h-4 w-4 mr-2" />
                   {note.isPinned ? "Unpin" : "Pin"} Note
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onStarToggle(note.id)}>
+                  {note.isStarred ? (
+                    <StarOff className="h-4 w-4 mr-2" />
+                  ) : (
+                    <Star className="h-4 w-4 mr-2" />
+                  )}
+                  {note.isStarred ? "Unstar" : "Star"} Note
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleEdit}>
                   <Edit3 className="h-4 w-4 mr-2" />
                   Edit
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => console.log("Archive note:", note.id)}>
+                <DropdownMenuItem onClick={() => onArchive(note.id)}>
                   <Archive className="h-4 w-4 mr-2" />
                   Archive
                 </DropdownMenuItem>

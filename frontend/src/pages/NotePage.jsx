@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { ArrowLeft, Save, MoreVertical, Archive, Trash2 } from "lucide-react"
+import { ArrowLeft, Save, MoreVertical, Archive, Trash2, List, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -12,6 +12,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import TodoList from "@/components/TodoList"
 
 const categories = ["Work", "Personal", "Learning", "Ideas"]
 
@@ -25,6 +36,9 @@ export default function NotePage() {
   const [category, setCategory] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [noteType, setNoteType] = useState("text") // "text" or "todo"
+  const [todos, setTodos] = useState([])
 
   // API base URL - adjust this to your backend URL
   const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api"
@@ -39,14 +53,41 @@ export default function NotePage() {
   const fetchNote = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`${API_BASE_URL}/notes/${noteId}`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch note')
+      
+      // Try to fetch as a regular note first
+      let response = await fetch(`${API_BASE_URL}/notes/${noteId}`)
+      let note = null
+      let isTodoList = false
+      
+      if (response.ok) {
+        note = await response.json()
+        // Check if it's a todo list by looking for todos array
+        if (note.todos && Array.isArray(note.todos)) {
+          isTodoList = true
+        }
+      } else {
+        // If note not found, try as todo list
+        response = await fetch(`${API_BASE_URL}/todo-lists/${noteId}`)
+        if (response.ok) {
+          note = await response.json()
+          isTodoList = true
+        } else {
+          throw new Error('Failed to fetch note or todo list')
+        }
       }
-      const note = await response.json()
+      
       setTitle(note.title || "")
-      setContent(note.content || "")
       setCategory(note.category || "")
+      
+      if (isTodoList) {
+        setNoteType("todo")
+        setTodos(note.todos || [])
+        setContent("") // Todo lists don't have content
+      } else {
+        setNoteType("text")
+        setContent(note.content || "")
+        setTodos([]) // Regular notes don't have todos
+      }
     } catch (err) {
       setError(err.message)
       console.error('Error fetching note:', err)
@@ -56,8 +97,18 @@ export default function NotePage() {
   }
 
   const handleSave = async () => {
-    if (!title.trim() || !content.trim()) {
-      setError("Title and content cannot be empty")
+    if (!title.trim()) {
+      setError("Title cannot be empty")
+      return
+    }
+
+    if (noteType === "text" && !content.trim()) {
+      setError("Content cannot be empty")
+      return
+    }
+
+    if (noteType === "todo" && todos.length === 0) {
+      setError("Add at least one todo item")
       return
     }
 
@@ -65,15 +116,24 @@ export default function NotePage() {
     setError(null)
 
     try {
-      const noteData = {
-        title: title.trim(),
-        content: content.trim(),
-        category: category || null
-      }
+      // Prepare data based on note type
+      const noteData = noteType === "todo" 
+        ? {
+            title: title.trim(),
+            category: category || null,
+            todos: todos
+          }
+        : {
+            title: title.trim(),
+            content: content.trim(),
+            category: category || null
+          }
 
+      // Use different endpoints based on note type
+      const baseEndpoint = noteType === "todo" ? "todo-lists" : "notes"
       const url = noteId 
-        ? `${API_BASE_URL}/notes/${noteId}` 
-        : `${API_BASE_URL}/notes`
+        ? `${API_BASE_URL}/${baseEndpoint}/${noteId}` 
+        : `${API_BASE_URL}/${baseEndpoint}`
       
       const method = noteId ? 'PUT' : 'POST'
 
@@ -100,16 +160,20 @@ export default function NotePage() {
     }
   }
 
-  const handleDelete = async () => {
+  const handleDeleteClick = () => {
     if (!noteId) return
+    setDeleteDialogOpen(true)
+  }
 
-    if (!window.confirm('Are you sure you want to delete this note?')) {
-      return
-    }
+  const handleDeleteConfirm = async () => {
+    if (!noteId) return
 
     try {
       setLoading(true)
-      const response = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
+      
+      // Use correct endpoint based on note type
+      const baseEndpoint = noteType === "todo" ? "todo-lists" : "notes"
+      const response = await fetch(`${API_BASE_URL}/${baseEndpoint}/${noteId}`, {
         method: 'DELETE'
       })
 
@@ -122,6 +186,33 @@ export default function NotePage() {
     } catch (err) {
       setError(err.message)
       console.error('Error deleting note:', err)
+    } finally {
+      setLoading(false)
+      setDeleteDialogOpen(false)
+    }
+  }
+
+  const handleArchive = async () => {
+    if (!noteId) return
+
+    try {
+      setLoading(true)
+      
+      // Use correct endpoint based on note type
+      const baseEndpoint = noteType === "todo" ? "todo-lists" : "notes"
+      const response = await fetch(`${API_BASE_URL}/${baseEndpoint}/${noteId}/archive`, {
+        method: 'POST'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to archive note')
+      }
+
+      // Success - navigate back to notes list
+      navigate("/")
+    } catch (err) {
+      setError(err.message)
+      console.error('Error archiving note:', err)
     } finally {
       setLoading(false)
     }
@@ -157,13 +248,13 @@ export default function NotePage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => console.log("Archive note:", noteId)} disabled={loading}>
+                <DropdownMenuItem onClick={handleArchive} disabled={loading}>
                   <Archive className="h-4 w-4 mr-2" />
                   Archive
                 </DropdownMenuItem>
                 {noteId && (
                   <DropdownMenuItem 
-                    onClick={handleDelete}
+                    onClick={handleDeleteClick}
                     className="text-destructive focus:text-destructive"
                     disabled={loading}
                   >
@@ -177,7 +268,7 @@ export default function NotePage() {
             <Button 
               onClick={handleSave} 
               className="ml-2"
-              disabled={loading || !title.trim() || !content.trim()}
+              disabled={loading || !title.trim() || (noteType === "text" && !content.trim()) || (noteType === "todo" && todos.length === 0)}
             >
               {loading ? (
                 <>Saving...</>
@@ -215,7 +306,7 @@ export default function NotePage() {
             />
 
             {/* Category Selection */}
-            <div className="mb-4">
+            <div className="mb-4 flex gap-4 items-center justify-between">
               <select 
                 value={category} 
                 onChange={(e) => setCategory(e.target.value)}
@@ -229,16 +320,49 @@ export default function NotePage() {
                   </option>
                 ))}
               </select>
+
+              {/* Note Type Toggle */}
+              <div className="flex border border-border rounded-md">
+                <Button
+                  variant={noteType === "text" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setNoteType("text")}
+                  disabled={loading}
+                  className="rounded-r-none"
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  Text
+                </Button>
+                <Button
+                  variant={noteType === "todo" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setNoteType("todo")}
+                  disabled={loading}
+                  className="rounded-l-none"
+                >
+                  <List className="h-4 w-4 mr-2" />
+                  Todo
+                </Button>
+              </div>
             </div>
 
-            {/* Content Textarea */}
-            <Textarea
-              placeholder="Start writing your note..."
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="min-h-[400px] border-none bg-transparent p-0 resize-none placeholder:text-muted-foreground focus-visible:ring-0 text-base leading-relaxed disabled:bg-muted"
-              disabled={loading}
-            />
+            {/* Content Area */}
+            {noteType === "text" ? (
+              <Textarea
+                placeholder="Start writing your note..."
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                className="min-h-[400px] border-none bg-transparent p-0 resize-none placeholder:text-muted-foreground focus-visible:ring-0 text-base leading-relaxed disabled:bg-muted"
+                disabled={loading}
+              />
+            ) : (
+              <div className="min-h-[400px]">
+                <TodoList
+                  todos={todos}
+                  onTodosChange={setTodos}
+                />
+              </div>
+            )}
 
             {/* Footer Info */}
             <div className="flex items-center justify-between mt-6 pt-4 border-t border-border/50">
@@ -256,27 +380,48 @@ export default function NotePage() {
             </div>
           </div>
 
-          {/* Quick Actions */}
-          <div className="flex items-center justify-center gap-4 mt-6">
-            <Button variant="outline" size="sm" disabled={loading}>
-              <Archive className="h-4 w-4 mr-2" />
-              Archive
-            </Button>
-            {noteId && (
+          {/* Quick Actions - Only show for existing notes */}
+          {noteId && (
+            <div className="flex items-center justify-center gap-4 mt-6">
+              <Button variant="outline" size="sm" disabled={loading} onClick={handleArchive}>
+                <Archive className="h-4 w-4 mr-2" />
+                Archive
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
                 className="text-destructive hover:text-destructive bg-transparent"
-                onClick={handleDelete}
+                onClick={handleDeleteClick}
                 disabled={loading}
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 Delete
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </main>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Note</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this note? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
