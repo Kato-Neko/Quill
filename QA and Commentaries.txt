@@ -1,0 +1,71 @@
+Page: Editing of existing note
+    Problems: 
+        1. Archiving Not working correctly.
+        2. Delete confirmation in localhost, should be a UI dialog box.
+
+Page: New note
+    Problem: Remove archive button should, that should be visible in editing note only.
+    Suggestions: Add a To Do List
+
+Page: Dashboard
+    Problems:
+        1. In adding of note (Select Category), there are 4 listed but there's only 3 navigation in side bar.
+        2. Some tabs is not yet working
+        3. For note cards display, pinning of not is not working as well as archiving. The same problem with delete -> Page: Editing of existing note number 2
+        4. No star action button on notes card display
+        5. Archive and trash are not accessible
+
+
+UX polish (quick wins)
+
+Empty states: friendly text and a “New note” CTA in each list.
+
+Toasts/snackbars for Save/Archive/Trash/Restore/Permanently delete.
+
+Autosave every 2–3s while editing; show “Saved • 3:42 PM”.
+
+Keyboard shortcuts: N (new), / (focus search), P (pin), S (star), E (edit), Del (trash).
+
+Search: debounce 250ms; highlight matches in cards.
+
+Sorting: Recent, A→Z, Pinned first (default).
+
+Checklist / To-Do: add a “Checklist” block type (checkbox markdown - [ ] works great).
+
+Confirmations as real modals: use a consistent AlertDialog component with primary/secondary buttons, escape to close.
+
+
+
+Addition Info: 
+
+Testing checklist
+
+    1. Create → Save → Appears in “All Notes” and correct category.
+
+    2. New screen shows no Archive/Trash.
+
+    3. Edit screen shows Archive/Trash; Archive sends note to Archive list and back via Unarchive.
+
+    4. Trash flow: move to trash → appears in Trash → Restore works → Delete forever uses modal and removes item.
+
+    5. Pinned shows a “Pinned” section; unpin moves it to Others.
+
+    6. Star toggle persists; “Starred” filter shows only starred actives.
+
+    7. Sidebar counts match the actual queries.
+
+    8. Search finds by title & body; category filters + search combine correctly.
+
+    9. Archive and Trash pages are routable and load even on refresh (deep links).
+
+    10. Keyboard shortcuts work and are announced in a help tooltip.
+
+
+
+Nice-to-haves
+
+    - Bulk actions (multi-select for archive/trash/pin/star).
+
+    - Note history (versions) and undo.
+
+    - Reminders/notifications.
