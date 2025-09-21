@@ -15,6 +15,69 @@ Page: Dashboard
         4. No star action button on notes card display
         5. Archive and trash are not accessible
 
+List of Features (to be checked)
+1. Dashboard / Main Page
+
+    Sidebar navigation with categories:
+    
+        All Notes
+        Work
+        Personal
+        Learning
+        Starred
+        Archive
+        Trash
+
+    Search bar to search notes.
+
+    Note cards display with:
+
+Title
+
+    Preview/snippet of content
+    Category label (chip/tag style)
+    Date created
+    Quick edit button (pencil icon)
+    Overflow menu (⋮) for more actions (though not fully functional yet).
+    Floating add note button (+) at the bottom right.
+
+2. New Note Page
+
+Title input field.
+
+    Category selection dropdown (Work, Personal, Learning, etc.). 
+    Content editor (plain text entry).
+    Save button in the top right.
+    Created date visible at the bottom.
+    Archive button (though this ideally belongs only on Edit Note page).
+
+3. Edit Note Page
+
+    Editable title field.
+    Editable category dropdown.
+    Content editing with spellcheck support (red underline for typos).
+    Save button to update note.
+    Archive button available.
+    Created date shown.
+    Category tag displayed at bottom.
+
+4. Note Management Features
+
+    Create a new note.
+    Edit an existing note.
+    Save notes.
+    Archive notes (though bugged in current implementation).
+    Delete notes (confirmation currently appears as browser default prompt).
+    Categorization of notes (Work, Personal, Learning).
+
+5. Visual / UX Features
+
+    Clean card-based layout for notes.
+    Minimalist interface with empty-state illustration and text: “No notes yet – Create your first note to get started!”.
+    Floating action button for quick note creation.
+    Sidebar for easy navigation.
+
+
 
 UX polish (quick wins)
 
