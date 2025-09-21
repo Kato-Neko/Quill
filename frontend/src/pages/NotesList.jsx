@@ -22,6 +22,7 @@ const categories = ["All Notes", "Work", "Personal", "Learning"]
 
 export default function NotesList() {
   const [notes, setNotes] = useState([])
+  const [allNotes, setAllNotes] = useState([]) // Store all notes for category filtering
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All Notes")
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -29,9 +30,13 @@ export default function NotesList() {
   const [error, setError] = useState(null)
   const navigate = useNavigate()
 
-  // Fetch notes from API
+  // Debounce search function
   useEffect(() => {
-    fetchNotes()
+    const timeoutId = setTimeout(() => {
+      fetchNotes()
+    }, 300) // 300ms debounce
+
+    return () => clearTimeout(timeoutId)
   }, [searchQuery, selectedCategory])
 
   const fetchNotes = async () => {
@@ -39,18 +44,17 @@ export default function NotesList() {
     setError(null)
 
     try {
-      // Build search term - if category is not "All Notes", include it in search
-      let searchTerm = ""
+      let url = `${API_BASE_URL}/notes?size=100`
+      
+      // If there's a search query, use the /search endpoint
       if (searchQuery.trim()) {
-        searchTerm = searchQuery.trim()
-      } else if (selectedCategory !== "All Notes") {
-        // If no search query but category selected, search by category
-        searchTerm = selectedCategory
+        url = `${API_BASE_URL}/notes/search?query=${encodeURIComponent(searchQuery.trim())}&size=100`
       }
-
-      const url = searchTerm
-        ? `${API_BASE_URL}/notes?search=${encodeURIComponent(searchTerm)}&size=100`
-        : `${API_BASE_URL}/notes?size=100`
+      // If there's a category selected but no search, filter by category using main endpoint
+      else if (selectedCategory !== "All Notes") {
+        // For category filtering, we'll fetch all and filter client-side since your API doesn't have category endpoint
+        url = `${API_BASE_URL}/notes?size=100`
+      }
       
       const response = await fetch(url)
       
@@ -59,21 +63,36 @@ export default function NotesList() {
       }
       
       const data = await response.json()
-      // Transform API data to match your component structure
       const transformedNotes = (data.content || []).map(note => ({
         id: note.id.toString(),
         title: note.title,
         content: note.content,
         category: note.category || "Personal",
-        isPinned: false, // Since we removed pinning, default to false
-        createdAt: new Date(note.createdAt).toISOString().split('T')[0]
+        isPinned: false,
+        createdAt: new Date(note.createdAt).toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'short', 
+          day: 'numeric' 
+        })
       }))
       
-      setNotes(transformedNotes)
+      // Store all notes for category filtering
+      setAllNotes(transformedNotes)
+      
+      // Apply category filter if selected
+      let filteredByCategory = transformedNotes
+      if (selectedCategory !== "All Notes" && !searchQuery.trim()) {
+        filteredByCategory = transformedNotes.filter(note => 
+          note.category === selectedCategory
+        )
+      }
+      
+      setNotes(filteredByCategory)
     } catch (err) {
       setError(err.message)
       console.error('Error fetching notes:', err)
       setNotes([])
+      setAllNotes([])
     } finally {
       setLoading(false)
     }
@@ -106,13 +125,20 @@ export default function NotesList() {
     console.log("Pin toggle not implemented:", noteId)
   }
 
-  const filteredNotes = notes.filter((note) => {
-    const matchesSearch =
-      note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      note.content.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesCategory = selectedCategory === "All Notes" || note.category === selectedCategory
-    return matchesSearch && matchesCategory
-  })
+  // Filter notes based on category when search is empty
+  const getFilteredNotes = () => {
+    if (searchQuery.trim()) {
+      // If searching, use the API results directly
+      return notes
+    }
+    
+    // If not searching, filter all notes by category
+    return allNotes.filter((note) => 
+      selectedCategory === "All Notes" || note.category === selectedCategory
+    )
+  }
+
+  const filteredNotes = getFilteredNotes()
 
   const pinnedNotes = filteredNotes.filter((note) => note.isPinned)
   const regularNotes = filteredNotes.filter((note) => !note.isPinned)
@@ -205,6 +231,18 @@ export default function NotesList() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10 bg-input border-border"
               />
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                >
+                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </Button>
+              )}
             </div>
           </div>
         </header>
@@ -227,6 +265,24 @@ export default function NotesList() {
           </div>
         )}
 
+        {/* Search Info */}
+        {searchQuery && (
+          <div className="p-3 bg-accent/50 border-b border-accent text-sm text-accent-foreground">
+            <span className="mr-2">Searching for "{searchQuery}"</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearchQuery("")
+                setSelectedCategory("All Notes")
+              }}
+              className="h-6 px-2 ml-2"
+            >
+              Clear All Filters
+            </Button>
+          </div>
+        )}
+
         {/* Notes Grid */}
         <main className="flex-1 overflow-auto p-6">
           <div className="max-w-6xl mx-auto">
@@ -245,7 +301,9 @@ export default function NotesList() {
             {/* Regular Notes */}
             {regularNotes.length > 0 && (
               <div>
-                <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">Others</h2>
+                <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">
+                  {searchQuery ? "Search Results" : "Others"}
+                </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {regularNotes.map((note) => (
                     <NoteCard key={note.id} note={note} onDelete={handleDelete} onPinToggle={handlePinToggle} />
@@ -262,10 +320,15 @@ export default function NotesList() {
             ) : filteredNotes.length === 0 && !loading ? (
               <div className="text-center py-12">
                 <StickyNote className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">
-                  {searchQuery || selectedCategory !== "All Notes" 
-                    ? "No notes found" 
-                    : "No notes yet. Create your first note!"
+                <h3 className="text-lg font-medium mb-2 text-foreground">
+                  {searchQuery ? "No notes found" : "No notes yet"}
+                </h3>
+                <p className="text-muted-foreground mb-4">
+                  {searchQuery 
+                    ? `No notes match "${searchQuery}". Try different keywords.` 
+                    : selectedCategory !== "All Notes" 
+                      ? `No notes in "${selectedCategory}" category yet.`
+                      : "Create your first note to get started!"
                   }
                 </p>
               </div>
