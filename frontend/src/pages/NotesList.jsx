@@ -1,19 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, Plus, StickyNote, Archive, Trash2, Star, Menu, MoreVertical, Edit3, Pin, StarOff, Briefcase, User, BookOpen, Lightbulb, Home, CheckSquare } from "lucide-react"
+import { Search, Plus, StickyNote, Archive, Trash2, Star, Pin, StarOff, Briefcase, User, BookOpen, Lightbulb, Home, CheckSquare, ShoppingCart } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import NoteCard from "@/components/NoteCard"
 import { Link, useNavigate } from "react-router-dom"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,13 +17,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 
 // API base URL
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api"
 
-const categories = ["All Notes", "Work", "Personal", "Learning", "Ideas"]
+const categories = ["All Notes", "Work", "Personal", "Learning", "Ideas", "Shopping"]
 
 export default function NotesList() {
   const [notes, setNotes] = useState([])
@@ -57,18 +50,7 @@ export default function NotesList() {
     setError(null)
 
     try {
-      let url = `${API_BASE_URL}/notes?size=100`
-      
-      // If there's a search query, use the /search endpoint
-      if (searchQuery.trim()) {
-        url = `${API_BASE_URL}/notes/search?query=${encodeURIComponent(searchQuery.trim())}&size=100`
-      }
-      // If there's a category selected but no search, filter by category using main endpoint
-      else if (selectedCategory !== "All Notes") {
-        // For category filtering, we'll fetch all and filter client-side since your API doesn't have category endpoint
-        url = `${API_BASE_URL}/notes?size=100`
-      }
-      
+      const url = `${API_BASE_URL}/notes?size=100`
       const response = await fetch(url)
       
       if (!response.ok) {
@@ -80,6 +62,7 @@ export default function NotesList() {
         id: note.id.toString(),
         title: note.title,
         content: note.content,
+        todos: Array.isArray(note.todos) ? note.todos : [],
         category: note.category || "Personal",
         isPinned: note.isPinned || false,
         isStarred: note.starred || false,
@@ -93,15 +76,21 @@ export default function NotesList() {
       // Store all notes for category filtering
       setAllNotes(transformedNotes)
       
-      // Apply category filter if selected
-      let filteredByCategory = transformedNotes
-      if (selectedCategory !== "All Notes" && !searchQuery.trim()) {
-        filteredByCategory = transformedNotes.filter(note => 
-          note.category === selectedCategory
-        )
+      // Apply search locally across title, content, todos, then category
+      const q = searchQuery.trim().toLowerCase()
+      let filtered = transformedNotes
+      if (q) {
+        filtered = transformedNotes.filter(n => {
+          const inTitle = (n.title || "").toLowerCase().includes(q)
+          const inContent = (n.content || "").toLowerCase().includes(q)
+          const inTodos = Array.isArray(n.todos) && n.todos.some(t => (t.text || "").toLowerCase().includes(q))
+          return inTitle || inContent || inTodos
+        })
       }
-      
-      setNotes(filteredByCategory)
+      if (selectedCategory !== "All Notes") {
+        filtered = filtered.filter(n => n.category === selectedCategory)
+      }
+      setNotes(filtered)
     } catch (err) {
       setError(err.message)
       console.error('Error fetching notes:', err)
@@ -293,6 +282,8 @@ export default function NotesList() {
                   return <BookOpen className="h-4 w-4 mr-3" />
                 case "Ideas":
                   return <Lightbulb className="h-4 w-4 mr-3" />
+                case "Shopping":
+                  return <ShoppingCart className="h-4 w-4 mr-3" />
                 default:
                   return <StickyNote className="h-4 w-4 mr-3" />
               }
@@ -306,7 +297,7 @@ export default function NotesList() {
                   selectedCategory === category
                     ? "bg-sidebar-primary text-sidebar-primary-foreground"
                     : "text-sidebar-foreground hover:bg-sidebar-accent"
-                }`}
+                } ${category !== "All Notes" ? "pl-10" : ""}`}
                 onClick={() => setSelectedCategory(category)}
               >
                 {getCategoryIcon(category)}
@@ -316,15 +307,7 @@ export default function NotesList() {
           })}
 
           <div className="mt-6">
-            <Link to="/todo-lists">
-              <Button
-                variant="ghost"
-                className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
-              >
-                <CheckSquare className="h-4 w-4 mr-3 text-green-500" />
-                {sidebarOpen && "Todo Lists"}
-              </Button>
-            </Link>
+            {/* Todo Lists page removed in hybrid setup */}
             <Link to="/favorites">
               <Button
                 variant="ghost"
@@ -509,104 +492,4 @@ export default function NotesList() {
   )
 }
 
-function NoteCard({ note, onDelete, onPinToggle, onStarToggle, onArchive }) {
-  const [isHovered, setIsHovered] = useState(false)
-  const navigate = useNavigate()
-
-  const handleEdit = () => {
-    navigate(`/note/${note.id}`)
-  }
-
-  return (
-    <Card
-      className="group cursor-pointer transition-all duration-200 hover:shadow-md border-border bg-card relative"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between mb-2">
-          <h3 
-            className="font-medium text-card-foreground line-clamp-1 cursor-pointer hover:underline"
-            onClick={handleEdit}
-          >
-            {note.title}
-          </h3>
-          <div className={`flex gap-1 transition-opacity duration-200 ${isHovered ? "opacity-100" : "opacity-0"}`}>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8"
-              onClick={handleEdit}
-            >
-              <Edit3 className="h-4 w-4" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8"
-              onClick={() => onStarToggle(note.id)}
-            >
-              {note.isStarred ? (
-                <Star className="h-4 w-4 fill-current text-yellow-500" />
-              ) : (
-                <StarOff className="h-4 w-4" />
-              )}
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onPinToggle(note.id)}>
-                  <Pin className="h-4 w-4 mr-2" />
-                  {note.isPinned ? "Unpin" : "Pin"} Note
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onStarToggle(note.id)}>
-                  {note.isStarred ? (
-                    <StarOff className="h-4 w-4 mr-2" />
-                  ) : (
-                    <Star className="h-4 w-4 mr-2" />
-                  )}
-                  {note.isStarred ? "Unstar" : "Star"} Note
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleEdit}>
-                  <Edit3 className="h-4 w-4 mr-2" />
-                  Edit
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onArchive(note.id)}>
-                  <Archive className="h-4 w-4 mr-2" />
-                  Archive
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => onDelete(note.id)}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-
-        <p className="text-sm text-muted-foreground mb-3 line-clamp-4 whitespace-pre-line">{note.content}</p>
-
-        <div className="flex items-center justify-between">
-          <Badge variant="secondary" className="text-xs">
-            {note.category}
-          </Badge>
-          <span className="text-xs text-muted-foreground">{note.createdAt}</span>
-        </div>
-
-        {note.isPinned && (
-          <div className="absolute top-2 right-2">
-            <Star className="h-4 w-4 text-primary fill-current" />
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
+// unified NoteCard moved to components/NoteCard.jsx

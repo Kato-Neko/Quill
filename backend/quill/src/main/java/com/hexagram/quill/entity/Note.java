@@ -22,7 +22,7 @@ public class Note {
     private String title;
 
     @Size(max = 10000, message = "Content must be less than 10000 characters")
-    @Column(name = "content", columnDefinition = "TEXT")
+    @Column(name = "content", columnDefinition = "TEXT", nullable = true)
     private String content;
 
     @Column(name = "category", length = 50)
@@ -47,6 +47,10 @@ public class Note {
 
     @Column(name = "is_pinned", nullable = false)
     private Boolean isPinned = false;
+
+    // JSON text storing checklist items when present
+    @Column(name = "todos", columnDefinition = "TEXT")
+    private String todos;
 
     // Default constructor
     public Note() {
@@ -139,6 +143,14 @@ public class Note {
         this.isPinned = isPinned;
     }
 
+    public String getTodos() {
+        return todos;
+    }
+
+    public void setTodos(String todos) {
+        this.todos = todos;
+    }
+
     @Override
     public String toString() {
         return "Note{" +
@@ -152,6 +164,7 @@ public class Note {
                 ", starred=" + starred +
                 ", deleted=" + deleted +
                 ", isPinned=" + isPinned +
+                ", todos='" + todos + '\'' +
                 '}';
     }
 }

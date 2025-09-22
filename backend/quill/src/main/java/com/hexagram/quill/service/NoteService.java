@@ -1,6 +1,10 @@
 package com.hexagram.quill.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hexagram.quill.dto.NoteDTO;
+import com.hexagram.quill.dto.TodoItem;
 import com.hexagram.quill.entity.Note;
 import com.hexagram.quill.repository.NoteRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +23,8 @@ public class NoteService {
 
     @Autowired
     private NoteRepository noteRepository;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * Retrieves a paginated list of notes. If a search term is provided, it filters
@@ -154,6 +160,7 @@ public class NoteService {
         existingNote.setTitle(noteDetails.getTitle());
         existingNote.setContent(noteDetails.getContent());
         existingNote.setCategory(noteDetails.getCategory());
+        existingNote.setTodos(noteDetails.getTodos());
 
         // `updatedAt` will be automatically handled by @UpdateTimestamp
         return noteRepository.save(existingNote);
@@ -290,6 +297,14 @@ public class NoteService {
         dto.setIsPinned(note.getIsPinned());
         dto.setCreatedAt(note.getCreatedAt());
         dto.setUpdatedAt(note.getUpdatedAt());
+        if (note.getTodos() != null && !note.getTodos().trim().isEmpty()) {
+            try {
+                java.util.List<TodoItem> todos = objectMapper.readValue(note.getTodos(), new TypeReference<java.util.List<TodoItem>>(){});
+                dto.setTodos(todos);
+            } catch (JsonProcessingException e) {
+                dto.setTodos(null);
+            }
+        }
 
         return dto;
     }
@@ -307,6 +322,18 @@ public class NoteService {
         note.setArchived(dto.getArchived());
         note.setDeleted(dto.getDeleted());
         note.setIsPinned(dto.getIsPinned());
+        // No noteType anymore; both content and todos can coexist
+
+        if (dto.getTodos() != null && !dto.getTodos().isEmpty()) {
+            try {
+                String todosJson = objectMapper.writeValueAsString(dto.getTodos());
+                note.setTodos(todosJson);
+            } catch (JsonProcessingException e) {
+                note.setTodos(null);
+            }
+        } else {
+            note.setTodos(null);
+        }
 
         return note;
     }
