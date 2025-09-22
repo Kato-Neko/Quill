@@ -1,17 +1,10 @@
 import { useState, useEffect } from "react"
-import { ArrowLeft, Save, MoreVertical, Archive, Trash2, List, FileText } from "lucide-react"
+import { ArrowLeft, Save, Archive, Trash2, List } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
 import { Link, useParams, useNavigate } from "react-router-dom"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+// removed top dropdown menu
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +17,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import TodoList from "@/components/TodoList"
 
-const categories = ["Work", "Personal", "Learning", "Ideas"]
+const categories = ["Work", "Personal", "Learning", "Ideas", "Shopping"]
 
 export default function NotePage() {
   const params = useParams()
@@ -33,12 +26,13 @@ export default function NotePage() {
 
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
-  const [category, setCategory] = useState("")
+  const [category, setCategory] = useState("Personal")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [noteType, setNoteType] = useState("text") // "text" or "todo"
+  const [noteType, setNoteType] = useState("text") // legacy flag; both sections visible now
   const [todos, setTodos] = useState([])
+  const [showChecklist, setShowChecklist] = useState(false)
 
   // API base URL - adjust this to your backend URL
   const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api"
@@ -50,44 +44,32 @@ export default function NotePage() {
     }
   }, [noteId])
 
+// Auto-save after 5s of inactivity (new and existing notes)
+useEffect(() => {
+  const debounce = setTimeout(() => {
+    if (!title.trim()) return
+    const hasText = content && content.trim().length > 0
+    const hasTodos = Array.isArray(todos) && todos.length > 0
+    if (!hasText && !hasTodos) return
+    handleSave({ silent: true })
+  }, 5000)
+
+  return () => clearTimeout(debounce)
+}, [title, content, JSON.stringify(todos), category])
+
   const fetchNote = async () => {
     try {
       setLoading(true)
-      
-      // Try to fetch as a regular note first
-      let response = await fetch(`${API_BASE_URL}/notes/${noteId}`)
-      let note = null
-      let isTodoList = false
-      
-      if (response.ok) {
-        note = await response.json()
-        // Check if it's a todo list by looking for todos array
-        if (note.todos && Array.isArray(note.todos)) {
-          isTodoList = true
-        }
-      } else {
-        // If note not found, try as todo list
-        response = await fetch(`${API_BASE_URL}/todo-lists/${noteId}`)
-        if (response.ok) {
-          note = await response.json()
-          isTodoList = true
-        } else {
-          throw new Error('Failed to fetch note or todo list')
-        }
-      }
-      
+      const response = await fetch(`${API_BASE_URL}/notes/${noteId}`)
+      if (!response.ok) throw new Error('Failed to fetch note')
+      const note = await response.json()
+
       setTitle(note.title || "")
-      setCategory(note.category || "")
-      
-      if (isTodoList) {
-        setNoteType("todo")
-        setTodos(note.todos || [])
-        setContent("") // Todo lists don't have content
-      } else {
-        setNoteType("text")
-        setContent(note.content || "")
-        setTodos([]) // Regular notes don't have todos
-      }
+      setCategory(note.category || "Personal")
+      setContent(note.content || "")
+      const incomingTodos = Array.isArray(note.todos) ? note.todos : []
+      setTodos(incomingTodos)
+      setShowChecklist(incomingTodos.length > 0)
     } catch (err) {
       setError(err.message)
       console.error('Error fetching note:', err)
@@ -96,19 +78,17 @@ export default function NotePage() {
     }
   }
 
-  const handleSave = async () => {
+  const handleSave = async (options = { silent: false }) => {
     if (!title.trim()) {
       setError("Title cannot be empty")
       return
     }
 
-    if (noteType === "text" && !content.trim()) {
-      setError("Content cannot be empty")
-      return
-    }
-
-    if (noteType === "todo" && todos.length === 0) {
-      setError("Add at least one todo item")
+    // Allow save if either content or checklist has data
+    const hasText = content && content.trim().length > 0
+    const hasTodos = Array.isArray(todos) && todos.length > 0
+    if (!hasText && !hasTodos) {
+      setError("Add text or at least one checklist item")
       return
     }
 
@@ -116,21 +96,16 @@ export default function NotePage() {
     setError(null)
 
     try {
-      // Prepare data based on note type
-      const noteData = noteType === "todo" 
-        ? {
-            title: title.trim(),
-            category: category || null,
-            todos: todos
-          }
-        : {
-            title: title.trim(),
-            content: content.trim(),
-            category: category || null
-          }
+      // Prepare payload: include both content and todos when present
+      const noteData = {
+        title: title.trim(),
+        content: hasText ? content.trim() : null,
+        category: category || null,
+        todos: hasTodos ? todos : null
+      }
 
-      // Use different endpoints based on note type
-      const baseEndpoint = noteType === "todo" ? "todo-lists" : "notes"
+      // Use single notes endpoint in hybrid model
+      const baseEndpoint = "notes"
       const url = noteId 
         ? `${API_BASE_URL}/${baseEndpoint}/${noteId}` 
         : `${API_BASE_URL}/${baseEndpoint}`
@@ -150,8 +125,19 @@ export default function NotePage() {
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`)
       }
 
-      // Success - navigate back to notes list
-      navigate("/")
+      // Success
+      if (options.silent) {
+        // If we created a new note silently, redirect to its edit page for subsequent auto-saves
+        if (!noteId) {
+          const saved = await response.json().catch(() => null)
+          const newId = saved && (saved.id || saved.note?.id)
+          if (newId) {
+            navigate(`/note/${newId}`, { replace: true })
+          }
+        }
+      } else {
+        navigate("/")
+      }
     } catch (err) {
       setError(err.message)
       console.error('Error saving note:', err)
@@ -171,8 +157,8 @@ export default function NotePage() {
     try {
       setLoading(true)
       
-      // Use correct endpoint based on note type
-      const baseEndpoint = noteType === "todo" ? "todo-lists" : "notes"
+      // Use single notes endpoint in hybrid model
+      const baseEndpoint = "notes"
       const response = await fetch(`${API_BASE_URL}/${baseEndpoint}/${noteId}`, {
         method: 'DELETE'
       })
@@ -198,8 +184,8 @@ export default function NotePage() {
     try {
       setLoading(true)
       
-      // Use correct endpoint based on note type
-      const baseEndpoint = noteType === "todo" ? "todo-lists" : "notes"
+      // Use single notes endpoint in hybrid model
+      const baseEndpoint = "notes"
       const response = await fetch(`${API_BASE_URL}/${baseEndpoint}/${noteId}/archive`, {
         method: 'POST'
       })
@@ -237,38 +223,18 @@ export default function NotePage() {
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <h1 className="text-lg font-semibold">{noteId ? "Edit Note" : "New Note"}</h1>
+            {/* No mode title to avoid abrupt UI changes between new/edit */}
           </div>
 
           <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" disabled={loading}>
-                  <MoreVertical className="h-5 w-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleArchive} disabled={loading}>
-                  <Archive className="h-4 w-4 mr-2" />
-                  Archive
-                </DropdownMenuItem>
-                {noteId && (
-                  <DropdownMenuItem 
-                    onClick={handleDeleteClick}
-                    className="text-destructive focus:text-destructive"
-                    disabled={loading}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
             <Button 
               onClick={handleSave} 
               className="ml-2"
-              disabled={loading || !title.trim() || (noteType === "text" && !content.trim()) || (noteType === "todo" && todos.length === 0)}
+              disabled={
+                loading ||
+                !title.trim() ||
+                (!content.trim() && (!Array.isArray(todos) || todos.length === 0))
+              }
             >
               {loading ? (
                 <>Saving...</>
@@ -305,49 +271,56 @@ export default function NotePage() {
               disabled={loading}
             />
 
-            {/* Category Selection */}
-            <div className="mb-4 flex gap-4 items-center justify-between">
-              <select 
-                value={category} 
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-48 bg-transparent border border-border rounded px-3 py-2 disabled:bg-muted"
-                disabled={loading}
-              >
-                <option value="">Select category</option>
-                {categories.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-
-              {/* Note Type Toggle */}
-              <div className="flex border border-border rounded-md">
-                <Button
-                  variant={noteType === "text" ? "default" : "ghost"}
-                  size="sm"
-                  onClick={() => setNoteType("text")}
-                  disabled={loading}
-                  className="rounded-r-none"
-                >
-                  <FileText className="h-4 w-4 mr-2" />
-                  Text
-                </Button>
-                <Button
-                  variant={noteType === "todo" ? "default" : "ghost"}
-                  size="sm"
-                  onClick={() => setNoteType("todo")}
-                  disabled={loading}
-                  className="rounded-l-none"
-                >
-                  <List className="h-4 w-4 mr-2" />
-                  Todo
-                </Button>
+            {/* Category Selection as Pills */}
+            <div className="mb-4 flex gap-2 flex-wrap items-center justify-between">
+              <div className="flex gap-2 flex-wrap">
+                {categories.map((cat) => {
+                  const isSelected = category === cat
+                  return (
+                    <Button
+                      key={cat}
+                      type="button"
+                      variant={isSelected ? "default" : "outline"}
+                      size="sm"
+                      disabled={loading}
+                      onClick={() => setCategory(cat)}
+                      className={`rounded-full px-4 ${
+                        isSelected
+                          ? "saturate-100"
+                          : "text-muted-foreground border-border/50 hover:bg-accent hover:text-accent-foreground"
+                      }`}
+                    >
+                      {cat}
+                    </Button>
+                  )
+                })}
               </div>
             </div>
 
             {/* Content Area */}
-            {noteType === "text" ? (
+            {showChecklist ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Textarea
+                  placeholder="Start writing your note..."
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  className="min-h-[400px] border-none bg-transparent p-0 resize-none placeholder:text-muted-foreground focus-visible:ring-0 text-base leading-relaxed disabled:bg-muted"
+                  disabled={loading}
+                />
+                <div className="min-h-[400px] border-l md:pl-6 border-border/50">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-muted-foreground">To-do list</h3>
+                    <Button size="sm" variant="ghost" onClick={() => setShowChecklist(false)} disabled={loading}>
+                      Remove
+                    </Button>
+                  </div>
+                  <TodoList
+                    todos={todos}
+                    onTodosChange={setTodos}
+                  />
+                </div>
+              </div>
+            ) : (
               <Textarea
                 placeholder="Start writing your note..."
                 value={content}
@@ -355,24 +328,10 @@ export default function NotePage() {
                 className="min-h-[400px] border-none bg-transparent p-0 resize-none placeholder:text-muted-foreground focus-visible:ring-0 text-base leading-relaxed disabled:bg-muted"
                 disabled={loading}
               />
-            ) : (
-              <div className="min-h-[400px]">
-                <TodoList
-                  todos={todos}
-                  onTodosChange={setTodos}
-                />
-              </div>
             )}
 
             {/* Footer Info */}
-            <div className="flex items-center justify-between mt-6 pt-4 border-t border-border/50">
-              <div className="flex items-center gap-2">
-                {category && (
-                  <Badge variant="secondary" className="text-xs">
-                    {category}
-                  </Badge>
-                )}
-              </div>
+            <div className="flex items-center justify-end mt-6 pt-4 border-t border-border/50">
               <span className="text-xs text-muted-foreground">
                 {noteId ? "Last edited: " : "Created: "}
                 {new Date().toLocaleDateString()}
@@ -380,25 +339,36 @@ export default function NotePage() {
             </div>
           </div>
 
-          {/* Quick Actions - Only show for existing notes */}
-          {noteId && (
-            <div className="flex items-center justify-center gap-4 mt-6">
-              <Button variant="outline" size="sm" disabled={loading} onClick={handleArchive}>
-                <Archive className="h-4 w-4 mr-2" />
-                Archive
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-destructive hover:text-destructive bg-transparent"
-                onClick={handleDeleteClick}
-                disabled={loading}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </Button>
-            </div>
-          )}
+          {/* Quick Actions */}
+          <div className="flex items-center justify-center gap-4 mt-6">
+            {/* To-do toggle first */}
+            <Button
+              variant={showChecklist ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShowChecklist((v) => !v)}
+              disabled={loading}
+              title={"Toggle to-do list section"}
+            >
+              <List className="h-4 w-4 mr-2" />
+              {showChecklist ? "Remove To-do" : "Add To-do"}
+            </Button>
+            {/* Archive second: visible for new notes but disabled until saved */}
+            <Button variant="outline" size="sm" disabled={loading || !noteId} onClick={handleArchive}>
+              <Archive className="h-4 w-4 mr-2" />
+              Archive
+            </Button>
+            {/* Delete last: visible for new notes but disabled until saved */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive bg-transparent"
+              onClick={handleDeleteClick}
+              disabled={loading || !noteId}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
+          </div>
         </div>
       </main>
 

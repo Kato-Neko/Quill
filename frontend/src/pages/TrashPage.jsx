@@ -1,20 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, ArrowLeft, Trash2, Star, MoreVertical, Edit3, Pin, StarOff, RotateCcw, FileText, CheckSquare } from "lucide-react"
+import { Search, ArrowLeft, Trash2, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Link, useNavigate } from "react-router-dom"
-import TodoListCard from "@/components/TodoListCard"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import NoteCard from "@/components/NoteCard"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,10 +25,10 @@ const categories = ["Personal", "Work", "Shopping", "Ideas"]
 
 export default function TrashPage() {
   const [notes, setNotes] = useState([])
-  const [todoLists, setTodoLists] = useState([])
+  // Removed separate todo lists
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
-  const [activeTab, setActiveTab] = useState("notes") // "notes" or "todos"
+  const [activeTab, setActiveTab] = useState("notes")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -45,11 +38,7 @@ export default function TrashPage() {
   // Debounce search function
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (activeTab === "notes") {
-        fetchTrashedNotes()
-      } else {
-        fetchTrashedTodoLists()
-      }
+      fetchTrashedNotes()
     }, 300) // 300ms debounce
 
     return () => clearTimeout(timeoutId)
@@ -99,46 +88,7 @@ export default function TrashPage() {
     }
   }
 
-  const fetchTrashedTodoLists = async () => {
-    setLoading(true)
-    setError(null)
-
-    try {
-      let url = `${API_BASE_URL}/todo-lists?deleted=true&size=50&sort=updatedAt,desc`
-      
-      if (searchQuery.trim()) {
-        url += `&search=${encodeURIComponent(searchQuery.trim())}`
-      }
-
-      const response = await fetch(url)
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      const todoLists = data.content.map(todoList => ({
-        id: todoList.id,
-        title: todoList.title,
-        category: todoList.category,
-        todos: todoList.todos || [],
-        isStarred: todoList.starred || false,
-        isPinned: todoList.isPinned || false,
-        createdAt: todoList.createdAt ? new Date(todoList.createdAt).toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric'
-        }) : 'Unknown date'
-      }))
-
-      setTodoLists(todoLists)
-    } catch (err) {
-      setError(err.message)
-      console.error('Error fetching trashed todo lists:', err)
-      setTodoLists([])
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Removed fetchTrashedTodoLists
 
   const handleDeleteClick = (noteId) => {
     setNoteToDelete(noteId)
@@ -149,7 +99,7 @@ export default function TrashPage() {
     if (!noteToDelete) return
 
     try {
-      const response = await fetch(`${API_BASE_URL}/${activeTab === "notes" ? "notes" : "todo-lists"}/${noteToDelete}/permanent`, {
+      const response = await fetch(`${API_BASE_URL}/notes/${noteToDelete}/permanent`, {
         method: 'DELETE'
       })
 
@@ -158,11 +108,7 @@ export default function TrashPage() {
       }
 
       // Refresh the appropriate list
-      if (activeTab === "notes") {
-        fetchTrashedNotes()
-      } else {
-        fetchTrashedTodoLists()
-      }
+      fetchTrashedNotes()
       setDeleteDialogOpen(false)
       setNoteToDelete(null)
     } catch (err) {
@@ -173,7 +119,7 @@ export default function TrashPage() {
 
   const handleRestore = async (itemId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/${activeTab === "notes" ? "notes" : "todo-lists"}/${itemId}/restore`, {
+      const response = await fetch(`${API_BASE_URL}/notes/${itemId}/restore`, {
         method: 'POST'
       })
 
@@ -182,13 +128,8 @@ export default function TrashPage() {
       }
 
       // Remove the item from the current list
-      if (activeTab === "notes") {
-        const updatedNotes = notes.filter(note => note.id !== itemId)
-        setNotes(updatedNotes)
-      } else {
-        const updatedTodoLists = todoLists.filter(todoList => todoList.id !== itemId)
-        setTodoLists(updatedTodoLists)
-      }
+      const updatedNotes = notes.filter(note => note.id !== itemId)
+      setNotes(updatedNotes)
     } catch (err) {
       setError(err.message)
       console.error('Error restoring item:', err)
@@ -197,7 +138,7 @@ export default function TrashPage() {
 
   const handlePinToggle = async (itemId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/${activeTab === "notes" ? "notes" : "todo-lists"}/${itemId}/pin`, {
+      const response = await fetch(`${API_BASE_URL}/notes/${itemId}/pin`, {
         method: 'POST'
       })
 
@@ -206,21 +147,12 @@ export default function TrashPage() {
       }
 
       // Update the item's pinned status
-      if (activeTab === "notes") {
-        const updatedNotes = notes.map(note => 
-          note.id === itemId 
-            ? { ...note, isPinned: !note.isPinned }
-            : note
-        )
-        setNotes(updatedNotes)
-      } else {
-        const updatedTodoLists = todoLists.map(todoList => 
-          todoList.id === itemId 
-            ? { ...todoList, isPinned: !todoList.isPinned }
-            : todoList
-        )
-        setTodoLists(updatedTodoLists)
-      }
+      const updatedNotes = notes.map(note => 
+        note.id === itemId 
+          ? { ...note, isPinned: !note.isPinned }
+          : note
+      )
+      setNotes(updatedNotes)
       console.log("Pin toggle implemented:", itemId)
     } catch (err) {
       setError(err.message)
@@ -230,7 +162,7 @@ export default function TrashPage() {
 
   const handleStarToggle = async (itemId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/${activeTab === "notes" ? "notes" : "todo-lists"}/${itemId}/star`, {
+      const response = await fetch(`${API_BASE_URL}/notes/${itemId}/star`, {
         method: 'POST'
       })
 
@@ -239,21 +171,12 @@ export default function TrashPage() {
       }
 
       // Update the item's starred status
-      if (activeTab === "notes") {
-        const updatedNotes = notes.map(note => 
-          note.id === itemId 
-            ? { ...note, isStarred: !note.isStarred }
-            : note
-        )
-        setNotes(updatedNotes)
-      } else {
-        const updatedTodoLists = todoLists.map(todoList => 
-          todoList.id === itemId 
-            ? { ...todoList, isStarred: !todoList.isStarred }
-            : todoList
-        )
-        setTodoLists(updatedTodoLists)
-      }
+      const updatedNotes = notes.map(note => 
+        note.id === itemId 
+          ? { ...note, isStarred: !note.isStarred }
+          : note
+      )
+      setNotes(updatedNotes)
       console.log("Star toggle implemented:", itemId)
     } catch (err) {
       setError(err.message)
@@ -268,17 +191,11 @@ export default function TrashPage() {
       )
     : notes
 
-  const filteredTodoLists = searchQuery.trim() 
-    ? todoLists.filter(todoList => 
-        todoList.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        todoList.todos.some(todo => todo.text.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
-    : todoLists
+  // Removed filteredTodoLists
 
   const pinnedNotes = filteredNotes.filter((note) => note.isPinned)
   const regularNotes = filteredNotes.filter((note) => !note.isPinned)
-  const pinnedTodoLists = filteredTodoLists.filter(todoList => todoList.isPinned)
-  const regularTodoLists = filteredTodoLists.filter(todoList => !todoList.isPinned)
+  // Removed todo list sections
 
   // Loading state
   if (loading && ((activeTab === "notes" && notes.length === 0) || (activeTab === "todos" && todoLists.length === 0))) {
@@ -352,19 +269,7 @@ export default function TrashPage() {
                 Notes
               </div>
             </button>
-            <button
-              onClick={() => setActiveTab("todos")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === "todos"
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <CheckSquare className="h-4 w-4" />
-                Todo Lists
-              </div>
-            </button>
+            {/* Todo Lists tab removed in hybrid setup */}
           </div>
         </div>
       </div>
@@ -405,14 +310,14 @@ export default function TrashPage() {
       {/* Content Grid */}
       <main className="p-6">
         <div className="max-w-6xl mx-auto">
-          {activeTab === "notes" ? (
+          {/* Only notes grid remains */}
             <>
               {/* Pinned Notes */}
               {pinnedNotes.length > 0 && (
                 <div className="mb-8">
                   <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">Pinned</h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {pinnedNotes.map((note) => (
+                  {pinnedNotes.map((note) => (
                       <NoteCard key={note.id} note={note} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onRestore={handleRestore} />
                     ))}
                   </div>
@@ -426,59 +331,27 @@ export default function TrashPage() {
                     {searchQuery ? "Search Results" : "Others"}
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {regularNotes.map((note) => (
+                  {regularNotes.map((note) => (
                       <NoteCard key={note.id} note={note} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onRestore={handleRestore} />
                     ))}
                   </div>
                 </div>
               )}
             </>
-          ) : (
-            <>
-              {/* Pinned Todo Lists */}
-              {pinnedTodoLists.length > 0 && (
-                <div className="mb-8">
-                  <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">Pinned</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {pinnedTodoLists.map((todoList) => (
-                      <TodoListCard key={todoList.id} todoList={todoList} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onArchive={handleRestore} />
-                    ))}
-                  </div>
-                </div>
-              )}
 
-              {/* Regular Todo Lists */}
-              {regularTodoLists.length > 0 && (
-                <div>
-                  <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">
-                    {searchQuery ? "Search Results" : "Others"}
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {regularTodoLists.map((todoList) => (
-                      <TodoListCard key={todoList.id} todoList={todoList} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onArchive={handleRestore} />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {loading && ((activeTab === "notes" && notes.length === 0) || (activeTab === "todos" && todoLists.length === 0)) ? (
+          {loading && notes.length === 0 ? (
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-              <p className="text-muted-foreground">Loading trashed {activeTab}...</p>
+              <p className="text-muted-foreground">Loading trashed notes...</p>
             </div>
-          ) : ((activeTab === "notes" && filteredNotes.length === 0) || (activeTab === "todos" && filteredTodoLists.length === 0)) && !loading ? (
+          ) : (filteredNotes.length === 0) && !loading ? (
             <div className="text-center py-12">
               <Trash2 className="h-12 w-12 text-red-500 mx-auto mb-4" />
               <h3 className="text-lg font-medium mb-2 text-foreground">
-                {searchQuery ? `No trashed ${activeTab} found` : activeTab === "notes" ? "Trash is empty" : "No trashed todo lists yet"}
+                {searchQuery ? `No trashed notes found` : "Trash is empty"}
               </h3>
               <p className="text-muted-foreground mb-4">
-                {searchQuery 
-                  ? `No trashed ${activeTab} match "${searchQuery}". Try different keywords.` 
-                  : `${activeTab === "notes" ? "Notes" : "Todo lists"} you delete will appear here.`
-                }
+                {searchQuery ? `No trashed notes match "${searchQuery}". Try different keywords.` : `Notes you delete will appear here.`}
               </p>
             </div>
           ) : null}
@@ -509,110 +382,4 @@ export default function TrashPage() {
   )
 }
 
-function NoteCard({ note, onDelete, onPinToggle, onStarToggle, onRestore }) {
-  const [isHovered, setIsHovered] = useState(false)
-  const navigate = useNavigate()
-
-  const handleEdit = () => {
-    navigate(`/note/${note.id}`)
-  }
-
-  return (
-    <Card
-      className="group cursor-pointer transition-all duration-200 hover:shadow-md border-border bg-card relative opacity-75"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between mb-2">
-          <h3 
-            className="font-medium text-card-foreground line-clamp-1 cursor-pointer hover:underline"
-            onClick={handleEdit}
-          >
-            {note.title}
-          </h3>
-          <div className={`flex gap-1 transition-opacity duration-200 ${isHovered ? "opacity-100" : "opacity-0"}`}>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8"
-              onClick={handleEdit}
-            >
-              <Edit3 className="h-4 w-4" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8"
-              onClick={() => onStarToggle(note.id)}
-            >
-              {note.isStarred ? (
-                <Star className="h-4 w-4 fill-current text-yellow-500" />
-              ) : (
-                <StarOff className="h-4 w-4" />
-              )}
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onPinToggle(note.id)}>
-                  <Pin className="h-4 w-4 mr-2" />
-                  {note.isPinned ? "Unpin" : "Pin"} Note
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onStarToggle(note.id)}>
-                  {note.isStarred ? (
-                    <StarOff className="h-4 w-4 mr-2" />
-                  ) : (
-                    <Star className="h-4 w-4 mr-2" />
-                  )}
-                  {note.isStarred ? "Unstar" : "Star"} Note
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleEdit}>
-                  <Edit3 className="h-4 w-4 mr-2" />
-                  Edit
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onRestore(note.id)}>
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  Restore
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => onDelete(note.id)}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete Forever
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-
-        <p className="text-sm text-muted-foreground mb-3 line-clamp-4 whitespace-pre-line">{note.content}</p>
-
-        <div className="flex items-center justify-between">
-          <Badge variant="secondary" className="text-xs">
-            {note.category}
-          </Badge>
-          <span className="text-xs text-muted-foreground">{note.createdAt}</span>
-        </div>
-
-        {note.isPinned && (
-          <div className="absolute top-2 right-2">
-            <Pin className="h-4 w-4 text-primary fill-current" />
-          </div>
-        )}
-
-        {note.isStarred && (
-          <div className="absolute top-2 right-8">
-            <Star className="h-4 w-4 text-yellow-500 fill-current" />
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
+// unified NoteCard used above

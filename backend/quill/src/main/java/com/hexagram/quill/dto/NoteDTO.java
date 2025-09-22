@@ -34,6 +34,8 @@ public class NoteDTO {
 
     private Boolean isPinned = false;
 
+    private java.util.List<com.hexagram.quill.dto.TodoItem> todos;
+
     // Default constructor
     public NoteDTO() {
     }
@@ -125,6 +127,14 @@ public class NoteDTO {
         this.isPinned = isPinned;
     }
 
+    public java.util.List<com.hexagram.quill.dto.TodoItem> getTodos() {
+        return todos;
+    }
+
+    public void setTodos(java.util.List<com.hexagram.quill.dto.TodoItem> todos) {
+        this.todos = todos;
+    }
+
     @Override
     public String toString() {
         return "NoteDTO{" +
@@ -138,6 +148,7 @@ public class NoteDTO {
                 ", starred=" + starred +
                 ", deleted=" + deleted +
                 ", isPinned=" + isPinned +
+                ", todos=" + todos +
                 '}';
     }
 }

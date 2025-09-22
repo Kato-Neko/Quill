@@ -4,7 +4,7 @@ import NotesList from "./pages/NotesList";
 import ArchivePage from "./pages/ArchivePage";
 import TrashPage from "./pages/TrashPage";
 import FavoritesPage from "./pages/FavoritesPage";
-import TodoListPage from "./pages/TodoListPage";
+// Standalone TodoListPage removed in hybrid setup
 
 function App() {
   return (
@@ -13,7 +13,7 @@ function App() {
         <Route path="/" element={<NotesList />} />
         <Route path="/note" element={<NotePage />} />
         <Route path="/note/:id" element={<NotePage />} />
-        <Route path="/todo-lists" element={<TodoListPage />} />
+        {/* /todo-lists route removed */}
         <Route path="/archive" element={<ArchivePage />} />
         <Route path="/trash" element={<TrashPage />} />
         <Route path="/favorites" element={<FavoritesPage />} />

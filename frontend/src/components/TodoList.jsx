@@ -1,10 +1,11 @@
 import { useState } from "react"
-import { Check, Plus, Trash2 } from "lucide-react"
+import { Check, Plus, Trash2, GripVertical } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
 export default function TodoList({ todos = [], onTodosChange }) {
   const [newTodo, setNewTodo] = useState("")
+  const [dragIndex, setDragIndex] = useState(null)
 
   const addTodo = () => {
     if (newTodo.trim()) {
@@ -24,6 +25,20 @@ export default function TodoList({ todos = [], onTodosChange }) {
   const deleteTodo = (id) => {
     const updatedTodos = todos.filter(todo => todo.id !== id)
     onTodosChange(updatedTodos)
+  }
+
+  // Drag & drop handlers
+  const handleDragStart = (index) => setDragIndex(index)
+  const handleDragOver = (e) => {
+    e.preventDefault()
+  }
+  const handleDrop = (index) => {
+    if (dragIndex === null || dragIndex === index) return
+    const updated = [...todos]
+    const [moved] = updated.splice(dragIndex, 1)
+    updated.splice(index, 0, moved)
+    setDragIndex(null)
+    onTodosChange(updated)
   }
 
   const handleKeyPress = (e) => {
@@ -49,7 +64,7 @@ export default function TodoList({ todos = [], onTodosChange }) {
       
       {todos.length > 0 && (
         <div className="space-y-2">
-          {todos.map((todo) => (
+          {todos.map((todo, index) => (
             <div
               key={todo.id}
               className={`flex items-center gap-2 p-2 rounded-md border ${
@@ -57,7 +72,12 @@ export default function TodoList({ todos = [], onTodosChange }) {
                   ? 'bg-muted/50 border-muted text-muted-foreground' 
                   : 'bg-background border-border'
               }`}
+              draggable
+              onDragStart={() => handleDragStart(index)}
+              onDragOver={handleDragOver}
+              onDrop={() => handleDrop(index)}
             >
+              <GripVertical className="h-4 w-4 text-muted-foreground" />
               <Button
                 variant="ghost"
                 size="sm"
