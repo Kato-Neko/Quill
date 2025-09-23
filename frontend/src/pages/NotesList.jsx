@@ -271,21 +271,22 @@ export default function NotesList() {
         <nav className="flex-1 p-2">
           {categories.map((category) => {
             const getCategoryIcon = (cat) => {
+              const iconClass = sidebarOpen ? "h-4 w-4 mr-3" : "h-4 w-4";
               switch (cat) {
                 case "All Notes":
-                  return <Home className="h-4 w-4 mr-3" />
+                  return <Home className={iconClass} />
                 case "Work":
-                  return <Briefcase className="h-4 w-4 mr-3" />
+                  return <Briefcase className={iconClass} />
                 case "Personal":
-                  return <User className="h-4 w-4 mr-3" />
+                  return <User className={iconClass} />
                 case "Learning":
-                  return <BookOpen className="h-4 w-4 mr-3" />
+                  return <BookOpen className={iconClass} />
                 case "Ideas":
-                  return <Lightbulb className="h-4 w-4 mr-3" />
+                  return <Lightbulb className={iconClass} />
                 case "Shopping":
-                  return <ShoppingCart className="h-4 w-4 mr-3" />
+                  return <ShoppingCart className={iconClass} />
                 default:
-                  return <StickyNote className="h-4 w-4 mr-3" />
+                  return <StickyNote className={iconClass} />
               }
             }
 
@@ -293,11 +294,11 @@ export default function NotesList() {
               <Button
                 key={category}
                 variant={selectedCategory === category ? "default" : "ghost"}
-                className={`w-full justify-start mb-1 ${
+                className={`w-full ${sidebarOpen ? "justify-start" : "justify-center"} mb-1 ${
                   selectedCategory === category
                     ? "bg-sidebar-primary text-sidebar-primary-foreground"
                     : "text-sidebar-foreground hover:bg-sidebar-accent"
-                } ${category !== "All Notes" ? "pl-10" : ""}`}
+                } ${sidebarOpen && category !== "All Notes" ? "pl-10" : ""}`}
                 onClick={() => setSelectedCategory(category)}
               >
                 {getCategoryIcon(category)}
@@ -307,31 +308,31 @@ export default function NotesList() {
           })}
 
           <div className="mt-6">
-            {/* Todo Lists page removed in hybrid setup */}
+            {/* Quick links */}
             <Link to="/favorites">
               <Button
                 variant="ghost"
-                className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
+                className={`w-full ${sidebarOpen ? "justify-start" : "justify-center"} mb-1 text-sidebar-foreground hover:bg-sidebar-accent`}
               >
-                <Star className="h-4 w-4 mr-3 text-yellow-500" />
+                <Star className={`h-4 w-4 ${sidebarOpen ? "mr-3" : ""} text-yellow-500`} />
                 {sidebarOpen && "Favorites"}
               </Button>
             </Link>
             <Link to="/archive">
               <Button
                 variant="ghost"
-                className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
+                className={`w-full ${sidebarOpen ? "justify-start" : "justify-center"} mb-1 text-sidebar-foreground hover:bg-sidebar-accent`}
               >
-                <Archive className="h-4 w-4 mr-3 text-blue-500" />
+                <Archive className={`h-4 w-4 ${sidebarOpen ? "mr-3" : ""} text-blue-500`} />
                 {sidebarOpen && "Archive"}
               </Button>
             </Link>
             <Link to="/trash">
               <Button
                 variant="ghost"
-                className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
+                className={`w-full ${sidebarOpen ? "justify-start" : "justify-center"} mb-1 text-sidebar-foreground hover:bg-sidebar-accent`}
               >
-                <Trash2 className="h-4 w-4 mr-3 text-red-500" />
+                <Trash2 className={`h-4 w-4 ${sidebarOpen ? "mr-3" : ""} text-red-500`} />
                 {sidebarOpen && "Trash"}
               </Button>
             </Link>
