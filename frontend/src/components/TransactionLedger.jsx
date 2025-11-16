@@ -11,7 +11,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select"
-import { ArrowUpRight, ArrowDownLeft, FileText, Calendar, Search, ExternalLink, Plus, Save, X } from "lucide-react"
+import { ArrowUpRight, ArrowDownLeft, FileText, Calendar, Search, ExternalLink, Plus, Save, X, Info } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog"
 
 const TRANSACTION_CATEGORIES = [
   "All",
@@ -27,10 +34,29 @@ export default function TransactionLedger() {
   const { address, transactions } = useWallet()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
+  const [feeDialogOpen, setFeeDialogOpen] = useState(false)
 
   // Don't show if wallet is not connected
   if (!address) {
     return null
+  }
+
+  const feeInfo = {
+    note_create: {
+      operation: "Create Note",
+      fee: "0.10 ADA",
+      description: "A transaction fee is charged each time you create a new note. This fee covers the blockchain transaction costs for storing your note data."
+    },
+    note_update: {
+      operation: "Update Note",
+      fee: "0.17 ADA",
+      description: "Each time you save changes to an existing note, a transaction fee is charged. This includes auto-saves that occur after 5 seconds of inactivity."
+    },
+    note_delete: {
+      operation: "Delete Note",
+      fee: "0.12 ADA",
+      description: "When you delete a note, a transaction fee is charged to process the deletion on the blockchain."
+    }
   }
 
   const filteredTransactions = useMemo(() => {
@@ -93,7 +119,14 @@ export default function TransactionLedger() {
       <div className="mb-4">
         <h2 className="text-lg font-bold mb-2">Transaction Ledger</h2>
         <p className="text-xs text-muted-foreground mb-4">
-          All transactions are automatically recorded when you create, update, or delete notes. Each operation incurs a fee.
+          All transactions are automatically recorded when you create, update, or delete notes. Each operation incurs a fee.{" "}
+          <button
+            onClick={() => setFeeDialogOpen(true)}
+            className="text-primary hover:underline inline-flex ml-1 items-center gap-1"
+          >
+            Learn more
+            <Info className="h-3 w-3" />
+          </button>
         </p>
         
         {/* Summary Cards */}
@@ -234,6 +267,44 @@ export default function TransactionLedger() {
           })}
         </div>
       )}
+
+      {/* Fee Information Dialog */}
+      <Dialog open={feeDialogOpen} onOpenChange={setFeeDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Transaction Fees</DialogTitle>
+            <DialogDescription>
+              Transparent fee structure for all note operations
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {Object.entries(feeInfo).map(([key, info]) => (
+              <div key={key} className="border rounded-lg p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    {key === 'note_create' && <Plus className="h-4 w-4 text-muted-foreground" />}
+                    {key === 'note_update' && <Save className="h-4 w-4 text-muted-foreground" />}
+                    {key === 'note_delete' && <X className="h-4 w-4 text-muted-foreground" />}
+                    <h3 className="font-semibold text-sm">{info.operation}</h3>
+                  </div>
+                  <Badge variant="outline" className="font-mono">
+                    {info.fee}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {info.description}
+                </p>
+              </div>
+            ))}
+            <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+              <p className="text-xs text-muted-foreground">
+                <strong>Note:</strong> All fees are automatically recorded in your transaction ledger. 
+                These fees are standard Cardano network transaction costs required to process operations on the blockchain.
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

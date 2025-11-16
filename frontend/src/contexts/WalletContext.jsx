@@ -141,7 +141,7 @@ export function WalletProvider({ children }) {
   };
 
   // Record transaction for note creation
-  const recordNoteCreate = (noteId, noteTitle, fee = 0.17) => {
+  const recordNoteCreate = (noteId, noteTitle, fee = 0.10) => {
     if (!address) return; // Only record if wallet is connected
     
     addTransaction({
@@ -171,7 +171,7 @@ export function WalletProvider({ children }) {
   };
 
   // Record transaction for note deletion
-  const recordNoteDelete = (noteId, noteTitle, fee = 0.17) => {
+  const recordNoteDelete = (noteId, noteTitle, fee = 0.12) => {
     if (!address) return; // Only record if wallet is connected
     
     addTransaction({
