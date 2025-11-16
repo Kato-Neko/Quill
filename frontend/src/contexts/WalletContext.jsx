@@ -13,24 +13,210 @@ export function WalletProvider({ children }) {
   const [isSending, setIsSending] = useState(false);
   const [transactions, setTransactions] = useState([]);
 
-  // Load saved wallet address and transactions on mount (only once)
-  useEffect(() => {
-    const savedAddress = localStorage.getItem('connectedWallet');
-    if (savedAddress && !address) {
-      // If we have a saved address but no wallet instance, it might be view-only
-      setAddress(savedAddress);
-      setIsViewOnly(true);
+  // Get the provider URL based on network
+  const getProviderUrl = () => {
+    switch (network) {
+      case 'preview':
+        return 'https://preview.cardano.org/api/v1';
+      case 'preprod':
+        return 'https://preprod.cardano.org/api/v1';
+      case 'mainnet':
+        return 'https://cardano-mainnet.blockfrost.io/api/v0';
+      default:
+        return 'https://preview.cardano.org/api/v1';
     }
-    
-    // Load transactions from localStorage
-    const savedTransactions = localStorage.getItem('walletTransactions');
-    if (savedTransactions) {
-      try {
-        setTransactions(JSON.parse(savedTransactions));
-      } catch (error) {
-        console.error('Failed to load transactions:', error);
+  };
+
+  // Get localStorage key for transactions based on wallet address
+  const getTransactionsKey = (addr) => {
+    return addr ? `walletTransactions_${addr}` : 'walletTransactions';
+  };
+
+  // Calculate balance from transaction ledger
+  const calculateBalanceFromTransactions = (txs = transactions) => {
+    if (!txs || txs.length === 0) return '0';
+    const totalReceived = txs
+      .filter(tx => tx.type === 'received')
+      .reduce((sum, tx) => sum + parseFloat(tx.amount || 0), 0);
+    const totalSent = txs
+      .filter(tx => tx.type === 'sent')
+      .reduce((sum, tx) => sum + parseFloat(tx.amount || 0), 0);
+    const netBalance = totalReceived - totalSent;
+    return netBalance.toFixed(2);
+  };
+
+  // Fetch balance from blockchain API for a given address
+  const fetchBalanceFromAPI = async (addr) => {
+    try {
+      // Try Koios API first (public, no API key needed for testnet)
+      let apiUrl;
+      if (network === 'preview') {
+        apiUrl = 'https://preview.koios.rest/api/v0/address_info';
+      } else if (network === 'preprod') {
+        apiUrl = 'https://preprod.koios.rest/api/v0/address_info';
+      } else {
+        // Mainnet - would need API key for Blockfrost
+        // For now, return 0 if mainnet
+        return '0';
+      }
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          _addresses: [addr]
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data && Array.isArray(data) && data.length > 0) {
+          // Koios returns balance in Lovelace
+          const balanceLovelace = data[0].balance || data[0].balance_total || '0';
+          const balanceADA = (parseInt(balanceLovelace) / 1000000).toFixed(2);
+          return balanceADA;
+        }
+      } else {
+        console.warn('Koios API returned non-OK status:', response.status);
+      }
+    } catch (error) {
+      console.error('Failed to fetch balance from Koios API:', error);
+      
+      // Fallback: Try Cardano Explorer API for preview testnet
+      if (network === 'preview') {
+        try {
+          const explorerResponse = await fetch(
+            `https://preview.cardanoscan.io/api/address/${addr}`,
+            {
+              headers: {
+                'Accept': 'application/json',
+              }
+            }
+          );
+          
+          if (explorerResponse.ok) {
+            const explorerData = await explorerResponse.json();
+            if (explorerData.balance) {
+              const balanceADA = (parseInt(explorerData.balance) / 1000000).toFixed(2);
+              return balanceADA;
+            }
+          }
+        } catch (explorerError) {
+          console.error('Failed to fetch balance from Cardano Explorer:', explorerError);
+        }
       }
     }
+    // Return '0' if all API calls fail - only show real blockchain balance
+    return '0';
+  };
+
+  // Load saved wallet address and transactions on mount (only once)
+  useEffect(() => {
+    const loadSavedWallet = async () => {
+      const savedAddress = localStorage.getItem('connectedWallet');
+      
+      if (savedAddress && !address) {
+        // Try to reconnect to wallet extension first (if available)
+        const availableWallets = BrowserWallet.getInstalledWallets();
+        let reconnected = false;
+        
+        if (availableWallets.length > 0) {
+          // Try to reconnect to the first available wallet
+          // If the address matches, we'll have full access
+          try {
+            const walletInstance = await BrowserWallet.enable(availableWallets[0].name);
+            const addr = await walletInstance.getChangeAddress();
+            
+            // If the address matches, we successfully reconnected!
+            if (addr === savedAddress) {
+              const bal = await walletInstance.getBalance();
+              const balanceADA = (parseInt(bal[0].quantity) / 1000000).toFixed(2);
+              
+              setWallet(walletInstance);
+              setAddress(addr);
+              setBalance(balanceADA);
+              setIsViewOnly(false);
+              reconnected = true;
+            } else {
+              // Address doesn't match, try other wallets
+              for (let i = 1; i < availableWallets.length; i++) {
+                try {
+                  const otherWallet = await BrowserWallet.enable(availableWallets[i].name);
+                  const otherAddr = await otherWallet.getChangeAddress();
+                  
+                  if (otherAddr === savedAddress) {
+                    const bal = await otherWallet.getBalance();
+                    const balanceADA = (parseInt(bal[0].quantity) / 1000000).toFixed(2);
+                    
+                    setWallet(otherWallet);
+                    setAddress(otherAddr);
+                    setBalance(balanceADA);
+                    setIsViewOnly(false);
+                    reconnected = true;
+                    break;
+                  }
+                } catch (err) {
+                  // Continue to next wallet
+                  continue;
+                }
+              }
+            }
+          } catch (error) {
+            // Wallet connection failed, will fall back to view-only
+            console.log('Could not reconnect to wallet extension:', error);
+          }
+        }
+        
+        // Load transactions ONLY for this specific wallet address
+        const transactionsKey = getTransactionsKey(savedAddress);
+        const savedTransactions = localStorage.getItem(transactionsKey);
+        
+        if (savedTransactions) {
+          try {
+            const loadedTransactions = JSON.parse(savedTransactions);
+            // Filter to only transactions for this wallet address
+            const walletTransactions = loadedTransactions.filter(tx => 
+              tx.senderAddress === savedAddress || 
+              tx.recipientAddress === savedAddress ||
+              (!tx.senderAddress && !tx.recipientAddress) // Legacy transactions without address
+            );
+            // Also filter out fake initial balance transactions
+            const filteredTransactions = walletTransactions.filter(tx => 
+              !tx.note?.toLowerCase().includes('initial wallet balance')
+            );
+            
+            if (filteredTransactions.length !== loadedTransactions.length) {
+              // Save filtered transactions back if we removed any
+              setTransactions(filteredTransactions);
+              localStorage.setItem(transactionsKey, JSON.stringify(filteredTransactions));
+            } else {
+              setTransactions(filteredTransactions);
+            }
+          } catch (error) {
+            console.error('Failed to load transactions:', error);
+          }
+        } else {
+          // No transactions for this wallet, start fresh
+          setTransactions([]);
+        }
+        
+        // If we couldn't reconnect to wallet extension, use view-only mode
+        if (!reconnected) {
+          setAddress(savedAddress);
+          setIsViewOnly(true);
+          // Fetch real balance from blockchain API only
+          const fetchedBalance = await fetchBalanceFromAPI(savedAddress);
+          setBalance(fetchedBalance);
+        }
+      } else {
+        // No saved wallet, clear transactions
+        setTransactions([]);
+      }
+    };
+    
+    loadSavedWallet();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run on mount
 
@@ -61,6 +247,39 @@ export function WalletProvider({ children }) {
       setIsViewOnly(false);
       
       localStorage.setItem('connectedWallet', addr);
+      
+      // Load transactions ONLY for this specific wallet address
+      const transactionsKey = getTransactionsKey(addr);
+      const savedTransactions = localStorage.getItem(transactionsKey);
+      
+      if (savedTransactions) {
+        try {
+          const loadedTransactions = JSON.parse(savedTransactions);
+          // Filter to only transactions for this wallet address
+          const walletTransactions = loadedTransactions.filter(tx => 
+            tx.senderAddress === addr || 
+            tx.recipientAddress === addr ||
+            (!tx.senderAddress && !tx.recipientAddress) // Legacy transactions without address
+          );
+          // Also filter out fake initial balance transactions
+          const filteredTransactions = walletTransactions.filter(tx => 
+            !tx.note?.toLowerCase().includes('initial wallet balance')
+          );
+          
+          if (filteredTransactions.length !== loadedTransactions.length) {
+            setTransactions(filteredTransactions);
+            localStorage.setItem(transactionsKey, JSON.stringify(filteredTransactions));
+          } else {
+            setTransactions(filteredTransactions);
+          }
+        } catch (error) {
+          console.error('Failed to load transactions:', error);
+          setTransactions([]);
+        }
+      } else {
+        // No transactions for this wallet, start fresh
+        setTransactions([]);
+      }
     } catch (error) {
       console.error('Wallet connection failed:', error);
       alert('Failed to connect wallet: ' + error.message);
@@ -69,7 +288,7 @@ export function WalletProvider({ children }) {
     }
   };
 
-  const connectManualAddress = (addr) => {
+  const connectManualAddress = async (addr) => {
     if (!addr || addr.trim() === '') {
       alert('Please enter a valid Cardano address');
       return;
@@ -82,10 +301,46 @@ export function WalletProvider({ children }) {
     }
 
     setAddress(addr);
-    setBalance('0'); // Can't get balance without wallet connection
     setWallet(null);
     setIsViewOnly(true);
     localStorage.setItem('connectedWallet', addr);
+    
+    // Load transactions ONLY for this specific wallet address
+    const transactionsKey = getTransactionsKey(addr);
+    const savedTransactions = localStorage.getItem(transactionsKey);
+    
+    if (savedTransactions) {
+      try {
+        const loadedTransactions = JSON.parse(savedTransactions);
+        // Filter to only transactions for this wallet address
+        const walletTransactions = loadedTransactions.filter(tx => 
+          tx.senderAddress === addr || 
+          tx.recipientAddress === addr ||
+          (!tx.senderAddress && !tx.recipientAddress) // Legacy transactions without address
+        );
+        // Also filter out fake initial balance transactions
+        const filteredTransactions = walletTransactions.filter(tx => 
+          !tx.note?.toLowerCase().includes('initial wallet balance')
+        );
+        
+        if (filteredTransactions.length !== loadedTransactions.length) {
+          setTransactions(filteredTransactions);
+          localStorage.setItem(transactionsKey, JSON.stringify(filteredTransactions));
+        } else {
+          setTransactions(filteredTransactions);
+        }
+      } catch (error) {
+        console.error('Failed to load transactions:', error);
+        setTransactions([]);
+      }
+    } else {
+      // No transactions for this wallet, start fresh
+      setTransactions([]);
+    }
+    
+    // Fetch real balance from blockchain API only
+    const fetchedBalance = await fetchBalanceFromAPI(addr);
+    setBalance(fetchedBalance);
   };
 
   const disconnectWallet = () => {
@@ -93,27 +348,16 @@ export function WalletProvider({ children }) {
     setAddress('');
     setBalance('0');
     setIsViewOnly(false);
+    setTransactions([]); // Clear transactions when disconnecting
     localStorage.removeItem('connectedWallet');
   };
 
-  // Get the provider URL based on network
-  const getProviderUrl = () => {
-    switch (network) {
-      case 'preview':
-        return 'https://preview.cardano.org/api/v1';
-      case 'preprod':
-        return 'https://preprod.cardano.org/api/v1';
-      case 'mainnet':
-        return 'https://cardano-mainnet.blockfrost.io/api/v0';
-      default:
-        return 'https://preview.cardano.org/api/v1';
-    }
-  };
-
-  // Save transactions to localStorage
-  const saveTransactions = (txs) => {
+  // Save transactions to localStorage (per wallet address)
+  const saveTransactions = (txs, addr = address) => {
     setTransactions(txs);
-    localStorage.setItem('walletTransactions', JSON.stringify(txs));
+    if (addr) {
+      localStorage.setItem(getTransactionsKey(addr), JSON.stringify(txs));
+    }
   };
 
   // Add a transaction to the ledger

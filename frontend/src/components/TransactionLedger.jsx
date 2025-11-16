@@ -31,7 +31,7 @@ const TRANSACTION_CATEGORIES = [
 ]
 
 export default function TransactionLedger() {
-  const { address, transactions } = useWallet()
+  const { address, transactions, balance } = useWallet()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [feeDialogOpen, setFeeDialogOpen] = useState(false)
@@ -112,7 +112,9 @@ export default function TransactionLedger() {
       .reduce((sum, tx) => sum + parseFloat(tx.amount), 0)
   }, [filteredTransactions])
 
-  const netBalance = totalReceived - totalSent
+  // Use actual wallet balance (real blockchain balance) instead of calculating from transactions
+  // Transactions are just a record of activity, but the balance is the actual wallet state
+  const netBalance = balance ? parseFloat(balance) : (totalReceived - totalSent)
 
   return (
     <div className="w-full">
@@ -133,22 +135,25 @@ export default function TransactionLedger() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
           <Card>
             <CardContent className="p-3">
-              <div className="text-xs text-muted-foreground mb-1">Total Received</div>
+              <div className="text-xs text-muted-foreground mb-1">Recorded Received</div>
               <div className="text-lg font-bold text-green-600">+{formatAmount(totalReceived)} ADA</div>
+              <div className="text-[10px] text-muted-foreground mt-1">From recorded transactions</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-3">
-              <div className="text-xs text-muted-foreground mb-1">Total Sent</div>
+              <div className="text-xs text-muted-foreground mb-1">Recorded Sent</div>
               <div className="text-lg font-bold text-red-600">-{formatAmount(totalSent)} ADA</div>
+              <div className="text-[10px] text-muted-foreground mt-1">From recorded transactions</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-3">
-              <div className="text-xs text-muted-foreground mb-1">Net Balance</div>
+              <div className="text-xs text-muted-foreground mb-1">Wallet Balance</div>
               <div className={`text-lg font-bold ${netBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {netBalance >= 0 ? '+' : ''}{formatAmount(netBalance)} ADA
               </div>
+              <div className="text-[10px] text-muted-foreground mt-1">Total ADA in wallet</div>
             </CardContent>
           </Card>
         </div>

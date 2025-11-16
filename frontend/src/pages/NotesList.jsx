@@ -442,7 +442,10 @@ export default function NotesList() {
                     <div className="px-2 py-1.5 text-sm">
                       <div className="font-medium">{address.slice(0, 8)}...{address.slice(-8)}</div>
                       <div className="text-xs text-muted-foreground">
-                        {isViewOnly ? 'View-only mode' : `${balance} ADA`}
+                        {isViewOnly && balance === '0' ? 'View-only mode' : `${balance} ADA`}
+                        {isViewOnly && balance !== '0' && (
+                          <span className="ml-1 text-[10px] opacity-70">(view-only)</span>
+                        )}
                       </div>
                     </div>
                     <DropdownMenuSeparator />
