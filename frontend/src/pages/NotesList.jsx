@@ -1,13 +1,23 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, Plus, StickyNote, Archive, Trash2, Star, Pin, StarOff, Briefcase, User, BookOpen, Lightbulb, Home, CheckSquare, ShoppingCart } from "lucide-react"
+import { Search, Plus, StickyNote, Archive, Trash2, Star, Pin, StarOff, Briefcase, User, BookOpen, Lightbulb, Home, CheckSquare, ShoppingCart, Wallet, Link2, Info, ArrowUpRight, ArrowDownLeft, Calendar, Tag, ExternalLink, MoreVertical } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import NoteCard from "@/components/NoteCard"
+import WalletConnect from "@/components/WalletConnect"
+import SendTransaction from "@/components/SendTransaction"
+import TransactionLedger from "@/components/TransactionLedger"
+import { useWallet } from "@/contexts/WalletContext"
 import { Link, useNavigate } from "react-router-dom"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +39,7 @@ export default function NotesList() {
   const [allNotes, setAllNotes] = useState([]) // Store all notes for category filtering
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All Notes")
+  const [walletView, setWalletView] = useState(null) // null, 'connect', 'details'
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -299,7 +310,10 @@ export default function NotesList() {
                     ? "bg-sidebar-primary text-sidebar-primary-foreground"
                     : "text-sidebar-foreground hover:bg-sidebar-accent"
                 } ${sidebarOpen && category !== "All Notes" ? "pl-10" : ""}`}
-                onClick={() => setSelectedCategory(category)}
+                onClick={() => {
+                  setSelectedCategory(category)
+                  setWalletView(null)
+                }}
               >
                 {getCategoryIcon(category)}
                 {sidebarOpen && category}
@@ -308,6 +322,48 @@ export default function NotesList() {
           })}
 
           <div className="mt-6">
+            {/* Wallet section */}
+            <Button
+              variant={walletView !== null ? "default" : "ghost"}
+              onClick={() => setWalletView(null)}
+              className={`w-full ${sidebarOpen ? "justify-start" : "justify-center"} mb-1 ${
+                walletView !== null
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent"
+              }`}
+            >
+              <Wallet className={`h-4 w-4 ${sidebarOpen ? "mr-3" : ""}`} />
+              {sidebarOpen && "Wallet"}
+            </Button>
+            {sidebarOpen && (
+              <>
+                <Button
+                  variant={walletView === "connect" ? "default" : "ghost"}
+                  onClick={() => setWalletView("connect")}
+                  className={`w-full justify-start mb-1 pl-10 ${
+                    walletView === "connect"
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                      : "text-sidebar-foreground hover:bg-sidebar-accent"
+                  }`}
+                >
+                  <Link2 className="h-4 w-4 mr-3" />
+                  Connect
+                </Button>
+                <Button
+                  variant={walletView === "details" ? "default" : "ghost"}
+                  onClick={() => setWalletView("details")}
+                  className={`w-full justify-start mb-1 pl-10 ${
+                    walletView === "details"
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                      : "text-sidebar-foreground hover:bg-sidebar-accent"
+                  }`}
+                >
+                  <Info className="h-4 w-4 mr-3" />
+                  Details
+                </Button>
+              </>
+            )}
+
             {/* Quick links */}
             <Link to="/favorites">
               <Button
@@ -405,41 +461,57 @@ export default function NotesList() {
           </div>
         )}
 
-        {/* Notes Grid */}
+        {/* Notes Grid or Wallet View */}
         <main className="flex-1 overflow-auto p-6">
           <div className="max-w-6xl mx-auto">
-            {/* Pinned Notes */}
-            {pinnedNotes.length > 0 && (
-              <div className="mb-8">
-                <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">Pinned</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {pinnedNotes.map((note) => (
-                    <NoteCard key={note.id} note={note} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onArchive={handleArchive} />
-                  ))}
+            {walletView === "connect" ? (
+              <div className="flex items-center justify-center min-h-[400px]">
+                <div className="w-full max-w-md space-y-6">
+                  <h2 className="text-2xl font-bold mb-6">Connect Wallet</h2>
+                  <WalletConnect />
+                  <div className="mt-6">
+                    <SendTransaction />
+                  </div>
                 </div>
               </div>
+            ) : walletView === "details" ? (
+              <TransactionLedger />
+            ) : (
+              <>
+                {/* Pinned Notes */}
+                {pinnedNotes.length > 0 && (
+                  <div className="mb-8">
+                    <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">Pinned</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {pinnedNotes.map((note) => (
+                        <NoteCard key={note.id} note={note} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onArchive={handleArchive} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Regular Notes */}
+                {regularNotes.length > 0 && (
+                  <div>
+                    <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">
+                      {searchQuery ? "Search Results" : "Others"}
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {regularNotes.map((note) => (
+                        <NoteCard key={note.id} note={note} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onArchive={handleArchive} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
-            {/* Regular Notes */}
-            {regularNotes.length > 0 && (
-              <div>
-                <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">
-                  {searchQuery ? "Search Results" : "Others"}
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {regularNotes.map((note) => (
-                    <NoteCard key={note.id} note={note} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onArchive={handleArchive} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {loading && notes.length === 0 ? (
+            {walletView === null && loading && notes.length === 0 ? (
               <div className="text-center py-12">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
                 <p className="text-muted-foreground">Loading your notes...</p>
               </div>
-            ) : filteredNotes.length === 0 && !loading ? (
+            ) : walletView === null && filteredNotes.length === 0 && !loading ? (
               <div className="text-center py-12">
                 <StickyNote className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-lg font-medium mb-2 text-foreground">
