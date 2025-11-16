@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Link, useParams, useNavigate } from "react-router-dom"
+import { useWallet } from "@/contexts/WalletContext"
 // removed top dropdown menu
 import {
   AlertDialog,
@@ -23,6 +24,7 @@ export default function NotePage() {
   const params = useParams()
   const navigate = useNavigate()
   const noteId = params.id
+  const { recordNoteCreate, recordNoteUpdate, recordNoteDelete } = useWallet()
 
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
@@ -125,15 +127,26 @@ useEffect(() => {
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`)
       }
 
+      const saved = await response.json().catch(() => null)
+      const savedId = saved && (saved.id || saved.note?.id)
+      const savedTitle = saved && (saved.title || saved.note?.title) || title.trim()
+
+      // Record transaction for note operation
+      if (!noteId) {
+        // New note created
+        if (savedId) {
+          recordNoteCreate(savedId, savedTitle)
+        }
+      } else {
+        // Existing note updated
+        recordNoteUpdate(noteId, savedTitle)
+      }
+
       // Success
       if (options.silent) {
         // If we created a new note silently, redirect to its edit page for subsequent auto-saves
-        if (!noteId) {
-          const saved = await response.json().catch(() => null)
-          const newId = saved && (saved.id || saved.note?.id)
-          if (newId) {
-            navigate(`/note/${newId}`, { replace: true })
-          }
+        if (!noteId && savedId) {
+          navigate(`/note/${savedId}`, { replace: true })
         }
       } else {
         navigate("/")
@@ -156,6 +169,10 @@ useEffect(() => {
 
     try {
       setLoading(true)
+      
+      // Record transaction before deleting (we need the title)
+      const noteTitle = title.trim() || "Untitled Note"
+      recordNoteDelete(noteId, noteTitle)
       
       // Use single notes endpoint in hybrid model
       const baseEndpoint = "notes"

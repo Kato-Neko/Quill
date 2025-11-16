@@ -1,14 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, Plus, StickyNote, Archive, Trash2, Star, Pin, StarOff, Briefcase, User, BookOpen, Lightbulb, Home, CheckSquare, ShoppingCart, Wallet, Link2, Info, ArrowUpRight, ArrowDownLeft, Calendar, Tag, ExternalLink, MoreVertical } from "lucide-react"
+import { Search, Plus, StickyNote, Archive, Trash2, Star, Pin, StarOff, Briefcase, User, BookOpen, Lightbulb, Home, CheckSquare, ShoppingCart, Wallet, Link2, ArrowUpRight, ArrowDownLeft, Calendar, Tag, ExternalLink, ChevronDown, LogOut, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import NoteCard from "@/components/NoteCard"
 import WalletConnect from "@/components/WalletConnect"
-import SendTransaction from "@/components/SendTransaction"
 import TransactionLedger from "@/components/TransactionLedger"
 import { useWallet } from "@/contexts/WalletContext"
 import { Link, useNavigate } from "react-router-dom"
@@ -17,6 +16,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import {
   AlertDialog,
@@ -28,6 +28,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 // API base URL
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api"
@@ -39,13 +46,15 @@ export default function NotesList() {
   const [allNotes, setAllNotes] = useState([]) // Store all notes for category filtering
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All Notes")
-  const [walletView, setWalletView] = useState(null) // null, 'connect', 'details'
+  const [walletView, setWalletView] = useState(null) // null, 'connect'
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [noteToDelete, setNoteToDelete] = useState(null)
+  const [walletDialogOpen, setWalletDialogOpen] = useState(false)
   const navigate = useNavigate()
+  const { address, recordNoteDelete, disconnectWallet, isViewOnly, balance, connectWallet, getAvailableWallets } = useWallet()
 
   // Debounce search function
   useEffect(() => {
@@ -121,6 +130,13 @@ export default function NotesList() {
     if (!noteToDelete) return
 
     try {
+      // Get note title before deleting for transaction record
+      const note = allNotes.find(n => n.id === noteToDelete.toString())
+      const noteTitle = note?.title || "Untitled Note"
+      
+      // Record transaction before deleting
+      recordNoteDelete(noteToDelete, noteTitle)
+      
       const response = await fetch(`${API_BASE_URL}/notes/${noteToDelete}`, {
         method: 'DELETE'
       })
@@ -349,18 +365,6 @@ export default function NotesList() {
                   <Link2 className="h-4 w-4 mr-3" />
                   Connect
                 </Button>
-                <Button
-                  variant={walletView === "details" ? "default" : "ghost"}
-                  onClick={() => setWalletView("details")}
-                  className={`w-full justify-start mb-1 pl-10 ${
-                    walletView === "details"
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent"
-                  }`}
-                >
-                  <Info className="h-4 w-4 mr-3" />
-                  Details
-                </Button>
               </>
             )}
 
@@ -400,28 +404,70 @@ export default function NotesList() {
       <div className="flex-1 flex flex-col">
         {/* Header */}
         <header className="border-b border-border p-4">
-          <div className="max-w-2xl mx-auto">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input
-                placeholder="Search notes..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 bg-input border-border"
-              />
-              {searchQuery && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-                >
-                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </Button>
-              )}
+          <div className="max-w-6xl mx-auto flex items-center gap-6">
+            <div className="flex-1 max-w-2xl">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                <Input
+                  placeholder="Search notes..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 bg-input border-border"
+                />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                  >
+                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </Button>
+                )}
+              </div>
             </div>
+            {address ? (
+              <div className="flex-shrink-0">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex items-center gap-2 px-3 py-2 rounded-md bg-accent/50 hover:bg-accent transition-colors">
+                      <User className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-mono text-foreground">{address.slice(0, 8)}...{address.slice(-8)}</span>
+                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <div className="px-2 py-1.5 text-sm">
+                      <div className="font-medium">{address.slice(0, 8)}...{address.slice(-8)}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {isViewOnly ? 'View-only mode' : `${balance} ADA`}
+                      </div>
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem 
+                      onClick={() => setWalletDialogOpen(true)}
+                      className="cursor-pointer"
+                    >
+                      <Settings className="mr-2 h-4 w-4" />
+                      Change Wallet
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={disconnectWallet}
+                      className="cursor-pointer text-destructive focus:text-destructive"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Disconnect
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ) : (
+              <div className="flex-shrink-0">
+                <WalletConnect />
+              </div>
+            )}
           </div>
         </header>
 
@@ -465,17 +511,23 @@ export default function NotesList() {
         <main className="flex-1 overflow-auto p-6">
           <div className="max-w-6xl mx-auto">
             {walletView === "connect" ? (
-              <div className="flex items-center justify-center min-h-[400px]">
-                <div className="w-full max-w-md space-y-6">
-                  <h2 className="text-2xl font-bold mb-6">Connect Wallet</h2>
-                  <WalletConnect />
-                  <div className="mt-6">
-                    <SendTransaction />
+              <div className="w-full space-y-6">
+                {!address ? (
+                  <div className="flex items-center justify-center min-h-[400px]">
+                    <div className="w-full max-w-md space-y-4 text-center">
+                      <h2 className="text-2xl font-bold">Connect Your Wallet</h2>
+                      <p className="text-sm text-muted-foreground">
+                        Connect your wallet to start tracking transactions automatically when you create, update, or delete notes.
+                      </p>
+                      <div className="pt-4">
+                        <WalletConnect />
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <TransactionLedger />
+                )}
               </div>
-            ) : walletView === "details" ? (
-              <TransactionLedger />
             ) : (
               <>
                 {/* Pinned Notes */}
@@ -561,6 +613,40 @@ export default function NotesList() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Change Wallet Dialog */}
+      <Dialog open={walletDialogOpen} onOpenChange={setWalletDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Wallet</DialogTitle>
+            <DialogDescription>
+              Select a different wallet to connect. The current wallet will be disconnected.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-4">
+            {getAvailableWallets().map((wallet) => (
+              <Button
+                key={wallet.name}
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => {
+                  disconnectWallet();
+                  connectWallet(wallet.name);
+                  setWalletDialogOpen(false);
+                }}
+              >
+                <Wallet className="mr-2" size={18} />
+                {wallet.name}
+              </Button>
+            ))}
+            {getAvailableWallets().length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No wallets detected. Please install a Cardano wallet extension.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -116,48 +116,8 @@ export function WalletProvider({ children }) {
     localStorage.setItem('walletTransactions', JSON.stringify(txs));
   };
 
-  // Create a note automatically for received transactions
-  const createNoteForTransaction = async (transaction) => {
-    if (transaction.type !== 'received') return null;
-
-    try {
-      const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
-      const noteTitle = `Received ${transaction.amount} ADA`;
-      const noteContent = `Transaction Details:
-- Amount: ${transaction.amount} ADA
-- From: ${transaction.senderAddress || 'Unknown'}
-- Category: ${transaction.category}
-- Date: ${new Date(transaction.date).toLocaleString()}
-${transaction.txHash ? `- Transaction Hash: ${transaction.txHash}` : ''}
-${transaction.note ? `\nNote: ${transaction.note}` : ''}`;
-
-      const noteData = {
-        title: noteTitle,
-        content: noteContent,
-        category: transaction.category || 'Income',
-      };
-
-      const response = await fetch(`${API_BASE_URL}/notes`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(noteData)
-      });
-
-      if (response.ok) {
-        const createdNote = await response.json();
-        // Link the note to the transaction
-        return createdNote.id;
-      }
-    } catch (error) {
-      console.error('Failed to create note for transaction:', error);
-    }
-    return null;
-  };
-
   // Add a transaction to the ledger
-  const addTransaction = async (transactionData) => {
+  const addTransaction = (transactionData) => {
     const newTransaction = {
       id: transactionData.id || Date.now().toString(),
       type: transactionData.type || 'sent',
@@ -171,20 +131,58 @@ ${transaction.note ? `\nNote: ${transaction.note}` : ''}`;
       status: transactionData.status || 'recorded',
       createdAt: transactionData.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      linkedNoteId: null, // Will be set if note is created
+      operation: transactionData.operation || null, // 'note_create', 'note_update', 'note_delete'
+      noteId: transactionData.noteId || null,
     };
-    
-    // Automatically create a note for received transactions
-    if (newTransaction.type === 'received') {
-      const noteId = await createNoteForTransaction(newTransaction);
-      if (noteId) {
-        newTransaction.linkedNoteId = noteId;
-      }
-    }
     
     const updated = [newTransaction, ...transactions];
     saveTransactions(updated);
     return newTransaction;
+  };
+
+  // Record transaction for note creation
+  const recordNoteCreate = (noteId, noteTitle, fee = 0.17) => {
+    if (!address) return; // Only record if wallet is connected
+    
+    addTransaction({
+      type: 'sent',
+      amount: fee,
+      category: 'Expense',
+      note: `Note created: "${noteTitle}"`,
+      operation: 'note_create',
+      noteId: noteId.toString(),
+      status: 'confirmed',
+    });
+  };
+
+  // Record transaction for note update
+  const recordNoteUpdate = (noteId, noteTitle, fee = 0.17) => {
+    if (!address) return; // Only record if wallet is connected
+    
+    addTransaction({
+      type: 'sent',
+      amount: fee,
+      category: 'Expense',
+      note: `Note updated: "${noteTitle}"`,
+      operation: 'note_update',
+      noteId: noteId.toString(),
+      status: 'confirmed',
+    });
+  };
+
+  // Record transaction for note deletion
+  const recordNoteDelete = (noteId, noteTitle, fee = 0.17) => {
+    if (!address) return; // Only record if wallet is connected
+    
+    addTransaction({
+      type: 'sent',
+      amount: fee,
+      category: 'Expense',
+      note: `Note deleted: "${noteTitle}"`,
+      operation: 'note_delete',
+      noteId: noteId.toString(),
+      status: 'confirmed',
+    });
   };
 
   // Update a transaction
@@ -312,7 +310,10 @@ ${transaction.note ? `\nNote: ${transaction.note}` : ''}`;
       setNetwork,
       addTransaction,
       updateTransaction,
-      deleteTransaction
+      deleteTransaction,
+      recordNoteCreate,
+      recordNoteUpdate,
+      recordNoteDelete
     }}>
       {children}
     </WalletContext.Provider>
