@@ -36,6 +36,11 @@ export default function NotePage() {
   const [todos, setTodos] = useState([])
   const [showChecklist, setShowChecklist] = useState(false)
   const [isTransactionPending, setIsTransactionPending] = useState(false)
+  const [noteCreatedAt, setNoteCreatedAt] = useState(null)
+  const [noteIsPinned, setNoteIsPinned] = useState(false)
+  const [noteIsStarred, setNoteIsStarred] = useState(false)
+  const [noteIsArchived, setNoteIsArchived] = useState(false)
+  const [noteUpdatedAt, setNoteUpdatedAt] = useState(null)
 
   // API base URL - adjust this to your backend URL
   const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api"
@@ -73,6 +78,24 @@ useEffect(() => {
       const incomingTodos = Array.isArray(note.todos) ? note.todos : []
       setTodos(incomingTodos)
       setShowChecklist(incomingTodos.length > 0)
+      setNoteCreatedAt(
+        note.createdAt ||
+        note.created_at ||
+        note.createdDate ||
+        note.created_date ||
+        null
+      )
+      setNoteIsPinned(Boolean(note.isPinned))
+      // Store additional attributes for metadata
+      setNoteIsStarred(Boolean(note.starred || note.isStarred))
+      setNoteIsArchived(Boolean(note.archived || note.isArchived))
+      setNoteUpdatedAt(
+        note.updatedAt ||
+        note.updated_at ||
+        note.updatedDate ||
+        note.updated_date ||
+        null
+      )
     } catch (err) {
       setError(err.message)
       console.error('Error fetching note:', err)
@@ -129,8 +152,31 @@ useEffect(() => {
       }
 
       const saved = await response.json().catch(() => null)
-      const savedId = saved && (saved.id || saved.note?.id)
-      const savedTitle = saved && (saved.title || saved.note?.title) || title.trim()
+      const savedPayload = saved?.note ? saved.note : saved
+      const savedId = savedPayload && (savedPayload.id || savedPayload.noteId || savedPayload.note_id)
+      const savedTitle = (savedPayload?.title || savedPayload?.noteTitle || savedPayload?.note_title || title).trim()
+      const savedCategory = savedPayload?.category || category
+      const savedCreatedAt =
+        savedPayload?.createdAt ||
+        savedPayload?.created_at ||
+        noteCreatedAt ||
+        new Date().toISOString()
+      const savedUpdatedAt =
+        savedPayload?.updatedAt ||
+        savedPayload?.updated_at ||
+        new Date().toISOString()
+      const savedPinned = typeof savedPayload?.isPinned === 'boolean' ? savedPayload.isPinned : noteIsPinned
+      const savedStarred = typeof savedPayload?.starred === 'boolean' ? savedPayload.starred : 
+                           typeof savedPayload?.isStarred === 'boolean' ? savedPayload.isStarred : noteIsStarred
+      const savedArchived = typeof savedPayload?.archived === 'boolean' ? savedPayload.archived :
+                           typeof savedPayload?.isArchived === 'boolean' ? savedPayload.isArchived : noteIsArchived
+
+      setNoteCreatedAt(savedCreatedAt)
+      setNoteIsPinned(Boolean(savedPinned))
+      setNoteIsStarred(Boolean(savedStarred))
+      setNoteIsArchived(Boolean(savedArchived))
+      setNoteUpdatedAt(savedUpdatedAt)
+      setCategory(savedCategory || category)
 
       // Send real blockchain transaction for note operation
       // Note: Transaction is sent asynchronously and won't block note save
@@ -138,7 +184,17 @@ useEffect(() => {
         // New note created
         if (savedId) {
           setIsTransactionPending(true);
-          recordNoteCreate(savedId, savedTitle)
+          recordNoteCreate({
+            noteId: savedId,
+            noteTitle: savedTitle,
+            category: savedCategory,
+            createdAt: savedCreatedAt,
+            updatedAt: savedUpdatedAt,
+            isPinned: savedPinned,
+            isStarred: savedStarred,
+            isArchived: savedArchived,
+            isDeleted: false,
+          })
             .then(() => {
               setIsTransactionPending(false);
             })
@@ -153,7 +209,17 @@ useEffect(() => {
       } else {
         // Existing note updated
         setIsTransactionPending(true);
-        recordNoteUpdate(noteId, savedTitle)
+        recordNoteUpdate({
+          noteId,
+          noteTitle: savedTitle,
+          category: savedCategory,
+          createdAt: savedCreatedAt,
+          updatedAt: savedUpdatedAt,
+          isPinned: savedPinned,
+          isStarred: savedStarred,
+          isArchived: savedArchived,
+          isDeleted: false,
+        })
           .then(() => {
             setIsTransactionPending(false);
           })
@@ -194,9 +260,23 @@ useEffect(() => {
     try {
       setLoading(true)
       
-      // Record transaction before deleting (we need the title)
+      // Record transaction before deleting (capture metadata now)
       const noteTitle = title.trim() || "Untitled Note"
-      recordNoteDelete(noteId, noteTitle)
+      const deleteMetadata = {
+        noteId,
+        noteTitle,
+        category,
+        createdAt: noteCreatedAt || new Date().toISOString(),
+        updatedAt: noteUpdatedAt || new Date().toISOString(),
+        isPinned: noteIsPinned,
+        isStarred: noteIsStarred,
+        isArchived: noteIsArchived,
+        isDeleted: true,
+      }
+      recordNoteDelete(deleteMetadata).catch(err => {
+        console.error('Blockchain delete transaction failed:', err)
+        setError(`Note delete recorded locally, but blockchain transaction failed: ${err.message || err.toString()}`)
+      })
       
       // Use single notes endpoint in hybrid model
       const baseEndpoint = "notes"

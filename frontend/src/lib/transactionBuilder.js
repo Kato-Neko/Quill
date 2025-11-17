@@ -42,6 +42,13 @@ export const buildAndSendNoteOperationTransaction = async ({
   operationType,
   noteId,
   noteTitle,
+  noteCategory = 'Uncategorized',
+  isPinned = false,
+  isStarred = false,
+  isArchived = false,
+  isDeleted = false,
+  timeCreated,
+  timeUpdated,
   feeAmount = 0.18,
   network = 'preview'
 }) => {
@@ -50,7 +57,19 @@ export const buildAndSendNoteOperationTransaction = async ({
   }
 
   try {
-    console.log('Building transaction for note operation:', { operationType, noteId, noteTitle, network });
+    console.log('Building transaction for note operation:', {
+      operationType,
+      noteId,
+      noteTitle,
+      noteCategory,
+      isPinned,
+      isStarred,
+      isArchived,
+      isDeleted,
+      timeCreated,
+      timeUpdated,
+      network,
+    });
     
     // Get wallet address (we'll send to ourselves)
     const address = await wallet.getChangeAddress();
@@ -66,16 +85,63 @@ export const buildAndSendNoteOperationTransaction = async ({
     
     // Build transaction metadata
     // Cardano metadata format: key-value pairs (numbers as keys)
-    // We'll use a custom key (674) for note operations
-    const metadata = {
-      674: { // Custom key for note operations
+    // We'll use CIP-20 friendly label 674 for human-readable data
+    // and label 1337 for structured app data
+    const sanitizeText = (value, maxLength = 64) => {
+      if (!value) return '';
+      return value.toString().substring(0, maxLength).replace(/[^\x20-\x7E]/g, '');
+    };
+
+    const operationTimestamp = new Date().toISOString();
+    const createdTimestamp = timeCreated || operationTimestamp;
+    const updatedTimestamp = timeUpdated || operationTimestamp;
+    const sanitizedTitle = sanitizeText(noteTitle || 'Untitled Note', 50);
+    const sanitizedCategory = sanitizeText(noteCategory || 'Uncategorized', 32) || 'Uncategorized';
+
+    // Metadata label 674 (CIP-20 msg array) - shown directly in Lace
+    const messageMetadata = {
+      674: {
         msg: [
-          operationType, // 'create', 'update', or 'delete'
-          noteId?.toString() || '',
-          (noteTitle?.substring(0, 50) || '').replace(/[^\x20-\x7E]/g, '') // Truncate and sanitize title
+          `Operation: ${operationType}`,
+          `Note ID: ${noteId?.toString() || 'N/A'}`,
+          `Title: ${sanitizedTitle || 'Untitled Note'}`,
+          `Category: ${sanitizedCategory}`,
+          `Created: ${createdTimestamp}`,
+          `Updated: ${updatedTimestamp}`,
+          `Pinned: ${isPinned ? 'true' : 'false'}`,
+          `Starred: ${isStarred ? 'true' : 'false'}`,
+          `Archived: ${isArchived ? 'true' : 'false'}`,
+          `Deleted: ${isDeleted ? 'true' : 'false'}`
         ]
       }
     };
+
+    // Metadata label 1337 - structured data map for programmatic reads
+    const structuredMetadata = {
+      1337: {
+        map: [
+          { k: { string: 'operation' }, v: { string: operationType } },
+          { k: { string: 'noteId' }, v: { string: noteId?.toString() || '' } },
+          { k: { string: 'noteTitle' }, v: { string: sanitizedTitle || 'Untitled Note' } },
+          { k: { string: 'category' }, v: { string: sanitizedCategory } },
+          { k: { string: 'isPinned' }, v: { string: isPinned ? 'true' : 'false' } },
+          { k: { string: 'isStarred' }, v: { string: isStarred ? 'true' : 'false' } },
+          { k: { string: 'isArchived' }, v: { string: isArchived ? 'true' : 'false' } },
+          { k: { string: 'isDeleted' }, v: { string: isDeleted ? 'true' : 'false' } },
+          { k: { string: 'createdAt' }, v: { string: createdTimestamp } },
+          { k: { string: 'updatedAt' }, v: { string: updatedTimestamp } },
+          { k: { string: 'operationTimestamp' }, v: { string: operationTimestamp } },
+          { k: { string: 'app' }, v: { string: 'Quill' } }
+        ]
+      }
+    };
+
+    const metadata = {
+      ...messageMetadata,
+      ...structuredMetadata,
+    };
+
+    console.log('Transaction metadata prepared:', metadata);
 
     // For note operations, we'll send a minimal amount (1 ADA) to ourselves
     // This ensures the transaction is valid and includes our metadata
@@ -88,20 +154,44 @@ export const buildAndSendNoteOperationTransaction = async ({
     const tx = new Transaction({ initiator: wallet })
       .sendLovelace(address, minOutputAmount.toString());
     
-    // Try to attach metadata - check which method exists
-    // Mesh SDK might use different method names in different versions
-    if (typeof tx.sendMetadata === 'function') {
-      console.log('Using sendMetadata method');
-      tx.sendMetadata(674, metadata[674]);
-    } else if (typeof tx.setMetadata === 'function') {
-      console.log('Using setMetadata method');
-      tx.setMetadata(674, metadata[674]);
-    } else if (typeof tx.attachMetadata === 'function') {
-      console.log('Using attachMetadata method');
-      tx.attachMetadata(674, metadata[674]);
-    } else {
-      console.warn('No metadata method found on Transaction class, proceeding without metadata');
-      // Continue without metadata - transaction will still work
+    // Attach metadata (both labels) if supported by SDK version
+    let metadataAttached = false;
+    try {
+      const txMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(tx));
+      console.log('Available transaction metadata methods:', txMethods.filter(m => m.toLowerCase().includes('metadata')));
+
+      const attachWithMethod = (methodName) => {
+        tx[methodName](674, messageMetadata[674]);
+        tx[methodName](1337, structuredMetadata[1337]);
+        metadataAttached = true;
+        console.log(`Metadata attached via ${methodName}`);
+      };
+
+      if (typeof tx.sendMetadata === 'function') {
+        attachWithMethod('sendMetadata');
+      } else if (typeof tx.setMetadata === 'function') {
+        attachWithMethod('setMetadata');
+      } else if (typeof tx.attachMetadata === 'function') {
+        attachWithMethod('attachMetadata');
+      } else if (tx.metadata !== undefined) {
+        tx.metadata = metadata;
+        metadataAttached = true;
+        console.log('Metadata set directly on transaction object');
+      } else if (tx.txBuilder && typeof tx.txBuilder.attachMetadata === 'function') {
+        tx.txBuilder.attachMetadata(674, messageMetadata[674]);
+        tx.txBuilder.attachMetadata(1337, structuredMetadata[1337]);
+        metadataAttached = true;
+        console.log('Metadata attached via txBuilder.attachMetadata');
+      } else {
+        console.warn('No metadata method found on Transaction class. Transaction will proceed without metadata.');
+      }
+
+      if (metadataAttached) {
+        console.log('Metadata labels attached:', Object.keys(metadata));
+      }
+    } catch (metadataError) {
+      console.error('Error attaching metadata:', metadataError);
+      console.warn('Continuing without metadata.');
     }
 
     console.log('Building unsigned transaction...');
