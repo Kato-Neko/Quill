@@ -134,6 +134,24 @@ export default function NotesList() {
       // Get note title before deleting for transaction record
       const note = allNotes.find(n => n.id === noteToDelete.toString())
       const noteTitle = note?.title || "Untitled Note"
+      const noteCategory = note?.category || 'Uncategorized'
+      const noteCreatedAt =
+        note?.createdAt ||
+        note?.created_at ||
+        note?.createdDate ||
+        note?.created_date ||
+        new Date().toISOString()
+      const noteUpdatedAt =
+        note?.updatedAt ||
+        note?.updated_at ||
+        note?.updatedDate ||
+        note?.updated_date ||
+        new Date().toISOString()
+      const notePinned = typeof note?.isPinned === 'boolean' ? note.isPinned : false
+      const noteStarred = typeof note?.isStarred === 'boolean' ? note.isStarred : 
+                         typeof note?.starred === 'boolean' ? note.starred : false
+      const noteArchived = typeof note?.isArchived === 'boolean' ? note.isArchived :
+                          typeof note?.archived === 'boolean' ? note.archived : false
       
       // Delete note first
       const response = await fetch(`${API_BASE_URL}/notes/${noteToDelete}`, {
@@ -152,7 +170,17 @@ export default function NotesList() {
       // Send real blockchain transaction after successful deletion
       // Note: Transaction is sent asynchronously and won't block note deletion
       setIsDeleteTransactionPending(true);
-      recordNoteDelete(noteToDelete, noteTitle)
+      recordNoteDelete({
+        noteId: noteToDelete,
+        noteTitle,
+        category: noteCategory,
+        createdAt: noteCreatedAt,
+        updatedAt: noteUpdatedAt,
+        isPinned: notePinned,
+        isStarred: noteStarred,
+        isArchived: noteArchived,
+        isDeleted: true,
+      })
         .then(() => {
           setIsDeleteTransactionPending(false);
         })

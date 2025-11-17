@@ -419,14 +419,61 @@ export function WalletProvider({ children }) {
     return newTransaction;
   };
 
+  // Helper to normalize metadata inputs
+  const normalizeNoteMetadata = ({ 
+    category, 
+    createdAt, 
+    updatedAt,
+    isPinned, 
+    isStarred, 
+    isArchived, 
+    isDeleted 
+  }) => {
+    return {
+      category: category || 'Uncategorized',
+      createdAt: createdAt || new Date().toISOString(),
+      updatedAt: updatedAt || new Date().toISOString(),
+      isPinned: Boolean(isPinned),
+      isStarred: Boolean(isStarred),
+      isArchived: Boolean(isArchived),
+      isDeleted: Boolean(isDeleted),
+    };
+  };
+
   // Send real blockchain transaction for note creation
-  const recordNoteCreate = async (noteId, noteTitle, fee = 0.10) => {
+  const recordNoteCreate = async ({
+    noteId,
+    noteTitle,
+    category,
+    createdAt,
+    updatedAt,
+    isPinned,
+    isStarred,
+    isArchived,
+    isDeleted,
+    fee = 0.10,
+  } = {}) => {
     if (!address || !wallet || isViewOnly) {
       console.warn('Wallet not connected or view-only mode. Transaction not sent.');
       return null;
     }
 
+    if (!noteId || !noteTitle) {
+      console.warn('Cannot record note creation without noteId and noteTitle');
+      return null;
+    }
+
     try {
+      const metadata = normalizeNoteMetadata({ 
+        category, 
+        createdAt, 
+        updatedAt,
+        isPinned, 
+        isStarred, 
+        isArchived, 
+        isDeleted 
+      });
+
       // Check sufficient balance
       const hasBalance = await hasSufficientBalance(wallet, fee);
       if (!hasBalance) {
@@ -440,6 +487,13 @@ export function WalletProvider({ children }) {
         operationType: 'create',
         noteId,
         noteTitle,
+        noteCategory: metadata.category,
+        isPinned: metadata.isPinned,
+        isStarred: metadata.isStarred,
+        isArchived: metadata.isArchived,
+        isDeleted: metadata.isDeleted,
+        timeCreated: metadata.createdAt,
+        timeUpdated: metadata.updatedAt,
         feeAmount: fee,
         network,
       });
@@ -458,7 +512,7 @@ export function WalletProvider({ children }) {
         type: 'sent',
         amount: fee,
         category: 'Expense',
-        note: `Note created: "${noteTitle}"`,
+        note: `Note created: "${noteTitle}" (${metadata.category})`,
         operation: 'note_create',
         noteId: noteId.toString(),
         status: 'confirmed', // Confirmed = successfully submitted to network
@@ -482,13 +536,39 @@ export function WalletProvider({ children }) {
   };
 
   // Send real blockchain transaction for note update
-  const recordNoteUpdate = async (noteId, noteTitle, fee = 0.17) => {
+  const recordNoteUpdate = async ({
+    noteId,
+    noteTitle,
+    category,
+    createdAt,
+    updatedAt,
+    isPinned,
+    isStarred,
+    isArchived,
+    isDeleted,
+    fee = 0.17,
+  } = {}) => {
     if (!address || !wallet || isViewOnly) {
       console.warn('Wallet not connected or view-only mode. Transaction not sent.');
       return null;
     }
 
+    if (!noteId || !noteTitle) {
+      console.warn('Cannot record note update without noteId and noteTitle');
+      return null;
+    }
+
     try {
+      const metadata = normalizeNoteMetadata({ 
+        category, 
+        createdAt, 
+        updatedAt,
+        isPinned, 
+        isStarred, 
+        isArchived, 
+        isDeleted 
+      });
+
       // Check sufficient balance
       const hasBalance = await hasSufficientBalance(wallet, fee);
       if (!hasBalance) {
@@ -502,6 +582,13 @@ export function WalletProvider({ children }) {
         operationType: 'update',
         noteId,
         noteTitle,
+        noteCategory: metadata.category,
+        isPinned: metadata.isPinned,
+        isStarred: metadata.isStarred,
+        isArchived: metadata.isArchived,
+        isDeleted: metadata.isDeleted,
+        timeCreated: metadata.createdAt,
+        timeUpdated: metadata.updatedAt,
         feeAmount: fee,
         network,
       });
@@ -520,7 +607,7 @@ export function WalletProvider({ children }) {
         type: 'sent',
         amount: fee,
         category: 'Expense',
-        note: `Note updated: "${noteTitle}"`,
+        note: `Note updated: "${noteTitle}" (${metadata.category})`,
         operation: 'note_update',
         noteId: noteId.toString(),
         status: 'confirmed', // Confirmed = successfully submitted to network
@@ -544,13 +631,39 @@ export function WalletProvider({ children }) {
   };
 
   // Send real blockchain transaction for note deletion
-  const recordNoteDelete = async (noteId, noteTitle, fee = 0.12) => {
+  const recordNoteDelete = async ({
+    noteId,
+    noteTitle,
+    category,
+    createdAt,
+    updatedAt,
+    isPinned,
+    isStarred,
+    isArchived,
+    isDeleted,
+    fee = 0.12,
+  } = {}) => {
     if (!address || !wallet || isViewOnly) {
       console.warn('Wallet not connected or view-only mode. Transaction not sent.');
       return null;
     }
 
+    if (!noteId || !noteTitle) {
+      console.warn('Cannot record note deletion without noteId and noteTitle');
+      return null;
+    }
+
     try {
+      const metadata = normalizeNoteMetadata({ 
+        category, 
+        createdAt, 
+        updatedAt,
+        isPinned, 
+        isStarred, 
+        isArchived, 
+        isDeleted: true // For delete operations, isDeleted should be true
+      });
+
       // Check sufficient balance
       const hasBalance = await hasSufficientBalance(wallet, fee);
       if (!hasBalance) {
@@ -564,6 +677,13 @@ export function WalletProvider({ children }) {
         operationType: 'delete',
         noteId,
         noteTitle,
+        noteCategory: metadata.category,
+        isPinned: metadata.isPinned,
+        isStarred: metadata.isStarred,
+        isArchived: metadata.isArchived,
+        isDeleted: metadata.isDeleted,
+        timeCreated: metadata.createdAt,
+        timeUpdated: metadata.updatedAt,
         feeAmount: fee,
         network,
       });
@@ -582,7 +702,7 @@ export function WalletProvider({ children }) {
         type: 'sent',
         amount: fee,
         category: 'Expense',
-        note: `Note deleted: "${noteTitle}"`,
+        note: `Note deleted: "${noteTitle}" (${metadata.category})`,
         operation: 'note_delete',
         noteId: noteId.toString(),
         status: 'confirmed', // Confirmed = successfully submitted to network
