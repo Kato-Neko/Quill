@@ -538,12 +538,11 @@ const recordNoteCreate = async ({
   isDeleted,
   fee = 0.10,
 } = {}) => {
-  // CRITICAL FIX: Don't block if wallet is reconnecting
   if (!wallet) {
     if (!address || isViewOnly) {
       throw new Error('Wallet not connected. Please connect your wallet to create notes.');
     }
-    throw new Error('Wallet is reconnecting. Please wait a moment and try again.');
+    // Wallet object might be null during re-hydration, but if we have an address and are not view-only, we can proceed.
   }
 
   if (!noteId || !noteTitle) {
@@ -555,12 +554,12 @@ const recordNoteCreate = async ({
       category, createdAt, updatedAt, isPinned, isStarred, isArchived, isDeleted 
     });
 
-    const hasBalance = await hasSufficientBalance(wallet, fee);
-    if (!hasBalance) {
-      throw new Error(`Insufficient balance. Need at least ${fee} ADA.`);
-    }
+    // The hasSufficientBalance check is now inside buildAndSendNoteOperationTransaction
+    // to ensure it uses the most up-to-date wallet instance.
 
-    const txHash = await buildAndSendNoteOperationTransaction({
+    // We now await the result of the entire transaction process.
+    // The user will be prompted to sign, and we wait for that to complete.
+    const txHash = await buildAndSendNoteOperationTransaction({ 
       wallet,
       operationType: 'create',
       noteId,
@@ -574,9 +573,12 @@ const recordNoteCreate = async ({
       timeUpdated: metadata.updatedAt,
       feeAmount: fee,
       network,
+      signingTimeout: 90000, // 90-second timeout for signing
     });
 
-    if (!txHash) throw new Error('Transaction failed: no hash returned');
+    if (!txHash) {
+      throw new Error('Transaction was not signed or failed to submit.');
+    }
 
     addTransaction({
       type: 'sent',
@@ -613,11 +615,8 @@ const recordNoteUpdate = async ({
   isDeleted,
   fee = 0.17,
 } = {}) => {
-  if (!wallet) {
-    if (!address || isViewOnly) {
-      throw new Error('Wallet not connected. Please connect your wallet to update notes.');
-    }
-    throw new Error('Wallet is reconnecting. Please wait a moment and try again.');
+  if (!wallet && !isViewOnly) {
+    throw new Error('Wallet not connected. Please connect your wallet to update notes.');
   }
 
   if (!noteId || !noteTitle) {
@@ -626,9 +625,6 @@ const recordNoteUpdate = async ({
 
   try {
     const metadata = normalizeNoteMetadata({ category, createdAt, updatedAt, isPinned, isStarred, isArchived, isDeleted });
-
-    const hasBalance = await hasSufficientBalance(wallet, fee);
-    if (!hasBalance) throw new Error(`Insufficient balance. Need ${fee} ADA.`);
 
     const txHash = await buildAndSendNoteOperationTransaction({
       wallet,
@@ -644,9 +640,12 @@ const recordNoteUpdate = async ({
       timeUpdated: metadata.updatedAt,
       feeAmount: fee,
       network,
+      signingTimeout: 90000, // 90-second timeout for signing
     });
 
-    if (!txHash) throw new Error('Update transaction failed');
+    if (!txHash) {
+      throw new Error('Update transaction was not signed or failed to submit.');
+    }
 
     addTransaction({
       type: 'sent',
@@ -683,11 +682,8 @@ const recordNoteDelete = async ({
   isDeleted,
   fee = 0.12,
 } = {}) => {
-  if (!wallet) {
-    if (!address || isViewOnly) {
-      throw new Error('Wallet not connected. Please connect your wallet to delete notes.');
-    }
-    throw new Error('Wallet is reconnecting. Please wait a moment and try again.');
+  if (!wallet && !isViewOnly) {
+    throw new Error('Wallet not connected. Please connect your wallet to delete notes.');
   }
 
   if (!noteId || !noteTitle) {
@@ -698,9 +694,6 @@ const recordNoteDelete = async ({
     const metadata = normalizeNoteMetadata({ 
       category, createdAt, updatedAt, isPinned, isStarred, isArchived, isDeleted: true 
     });
-
-    const hasBalance = await hasSufficientBalance(wallet, fee);
-    if (!hasBalance) throw new Error(`Insufficient balance. Need ${fee} ADA.`);
 
     const txHash = await buildAndSendNoteOperationTransaction({
       wallet,
@@ -716,9 +709,12 @@ const recordNoteDelete = async ({
       timeUpdated: metadata.updatedAt,
       feeAmount: fee,
       network,
+      signingTimeout: 90000, // 90-second timeout for signing
     });
 
-    if (!txHash) throw new Error('Delete transaction failed');
+    if (!txHash) {
+      throw new Error('Delete transaction was not signed or failed to submit.');
+    }
 
     addTransaction({
       type: 'sent',

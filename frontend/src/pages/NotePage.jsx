@@ -55,6 +55,9 @@ export default function NotePage() {
 // Auto-save after 5s of inactivity (new and existing notes)
 useEffect(() => {
   const debounce = setTimeout(() => {
+    // Do not auto-save if a transaction is already pending or the page is loading
+    if (isTransactionPending || loading) return;
+
     if (!title.trim()) return
     const hasText = content && content.trim().length > 0
     const hasTodos = Array.isArray(todos) && todos.length > 0
@@ -63,7 +66,7 @@ useEffect(() => {
   }, 5000)
 
   return () => clearTimeout(debounce)
-}, [title, content, JSON.stringify(todos), category])
+}, [title, content, JSON.stringify(todos), category, isTransactionPending, loading])
 
   const fetchNote = async () => {
     try {

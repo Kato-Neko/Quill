@@ -216,14 +216,38 @@ export const buildAndSendNoteOperationTransaction = async ({
     // Sign the transaction with the wallet
     // This will prompt the user in Lace wallet to approve the transaction
     let signedTx;
+    const SIGNING_TIMEOUT = 120000; // 2 minutes to prevent premature timeout
+
     try {
-      signedTx = await wallet.signTx(unsignedTx);
+      // Wrap signing in a Promise with a manual timeout.
+      // This prevents the 'TxSignError' from appearing too quickly.
+      signedTx = await new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Transaction signing timed out after 2 minutes. Please try again.'));
+        }, SIGNING_TIMEOUT);
+
+        wallet.signTx(unsignedTx, false) // Use partial sign `false`
+          .then(signed => {
+            clearTimeout(timeoutId);
+            resolve(signed);
+          })
+          .catch(err => {
+            clearTimeout(timeoutId);
+            // Forward the original error from the wallet (e.g., user rejection)
+            reject(err);
+          });
+      });
       console.log('Transaction signed:', signedTx ? 'Yes' : 'No');
     } catch (signError) {
       console.error('Error signing transaction:', signError);
-      throw new Error(`Transaction signing failed: ${signError.message || signError.toString()}`);
+      // Make error message more user-friendly
+      if (signError.message?.includes('timed out')) {
+        throw new Error('Transaction signing timed out. Please try again.');
+      }
+      // Re-throw the original error (like TxSignError for user rejection)
+      throw signError;
     }
-    
+
     if (!signedTx) {
       throw new Error('Transaction was not signed by wallet - user may have rejected it or wallet error occurred');
     }
@@ -308,4 +332,3 @@ export const hasSufficientBalance = async (wallet, requiredAmount) => {
     return false;
   }
 };
-
