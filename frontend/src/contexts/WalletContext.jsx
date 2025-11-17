@@ -5,6 +5,7 @@ import {
   estimateTransactionFee,
   hasSufficientBalance 
 } from '../lib/transactionBuilder';
+import { saveTransactionToBackend, syncTransactionsToBackend } from '../services/blockchainTransactionService';
 
 const WalletContext = createContext();
 
@@ -144,6 +145,20 @@ export function WalletProvider({ children }) {
               setBalance(balanceADA);
               setIsViewOnly(false);
               reconnected = true;
+              
+              // Sync transactions to backend after successful reconnection
+              const transactionsKey = getTransactionsKey(addr);
+              const savedTransactions = localStorage.getItem(transactionsKey);
+              if (savedTransactions) {
+                try {
+                  const txs = JSON.parse(savedTransactions);
+                  syncTransactionsToBackend(txs).catch(err => 
+                    console.error('Failed to sync transactions on reconnect:', err)
+                  );
+                } catch (e) {
+                  console.error('Failed to parse transactions for sync:', e);
+                }
+              }
             } else {
               // Address doesn't match, try other wallets
               for (let i = 1; i < availableWallets.length; i++) {
@@ -297,6 +312,11 @@ export function WalletProvider({ children }) {
           } else {
             setTransactions(filteredTransactions);
           }
+          
+          // Sync transactions to backend after loading
+          syncTransactionsToBackend(filteredTransactions).catch(err => 
+            console.error('Failed to sync transactions on connect:', err)
+          );
         } catch (error) {
           console.error('Failed to load transactions:', error);
           setTransactions([]);
@@ -412,10 +432,21 @@ export function WalletProvider({ children }) {
       updatedAt: new Date().toISOString(),
       operation: transactionData.operation || null, // 'note_create', 'note_update', 'note_delete'
       noteId: transactionData.noteId || null,
+      network: transactionData.network || network,
+      noteTitle: transactionData.noteTitle || null,
     };
     
     const updated = [newTransaction, ...transactions];
     saveTransactions(updated);
+    
+    // Sync to backend if transaction has txHash (confirmed on blockchain)
+    if (newTransaction.txHash && newTransaction.status === 'confirmed') {
+      saveTransactionToBackend(newTransaction).catch(err => {
+        console.error('Failed to sync transaction to backend:', err);
+        // Non-blocking error - transaction is still saved in localStorage
+      });
+    }
+    
     return newTransaction;
   };
 
@@ -515,8 +546,10 @@ export function WalletProvider({ children }) {
         note: `Note created: "${noteTitle}" (${metadata.category})`,
         operation: 'note_create',
         noteId: noteId.toString(),
+        noteTitle: noteTitle,
         status: 'confirmed', // Confirmed = successfully submitted to network
         txHash: txHash,
+        network: network,
       });
 
       // Refresh balance after transaction
@@ -610,8 +643,10 @@ export function WalletProvider({ children }) {
         note: `Note updated: "${noteTitle}" (${metadata.category})`,
         operation: 'note_update',
         noteId: noteId.toString(),
+        noteTitle: noteTitle,
         status: 'confirmed', // Confirmed = successfully submitted to network
         txHash: txHash,
+        network: network,
       });
 
       // Refresh balance after transaction
@@ -705,8 +740,10 @@ export function WalletProvider({ children }) {
         note: `Note deleted: "${noteTitle}" (${metadata.category})`,
         operation: 'note_delete',
         noteId: noteId.toString(),
+        noteTitle: noteTitle,
         status: 'confirmed', // Confirmed = successfully submitted to network
         txHash: txHash,
+        network: network,
       });
 
       // Refresh balance after transaction
