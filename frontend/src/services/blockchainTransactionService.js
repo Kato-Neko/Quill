@@ -9,33 +9,90 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api'
  * @param {Object} transactionData - Transaction data from wallet context
  * @returns {Promise<Object>} Saved transaction from backend
  */
+const buildTransactionPayload = (transactionData) => ({
+  txHash: transactionData.txHash,
+  operationType: transactionData.operation,
+  noteId: transactionData.noteId ? parseInt(transactionData.noteId, 10) : null,
+  walletAddress: transactionData.senderAddress,
+  amount: transactionData.amount !== undefined && transactionData.amount !== null
+    ? parseFloat(transactionData.amount)
+    : null,
+  fee: transactionData.amount !== undefined && transactionData.amount !== null
+    ? parseFloat(transactionData.amount)
+    : null,
+  network: transactionData.network || 'preview',
+  status: transactionData.status || 'confirmed',
+  metadata: transactionData.metadata ? JSON.stringify(transactionData.metadata) : null,
+  noteTitle: transactionData.noteTitle || extractNoteTitleFromNote(transactionData.note),
+  description: transactionData.note,
+  errorMessage: transactionData.errorMessage || null,
+});
+
+const fetchTransactionByHash = async (txHash) => {
+  if (!txHash) return null;
+  try {
+    const response = await fetch(`${API_BASE_URL}/blockchain-transactions/hash/${txHash}`);
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching transaction by hash:', error);
+    return null;
+  }
+};
+
+const updateTransactionInBackend = async (transactionId, transactionData) => {
+  if (!transactionId) return null;
+  try {
+    const payload = {
+      ...buildTransactionPayload(transactionData),
+      id: transactionId,
+    };
+    const response = await fetch(`${API_BASE_URL}/blockchain-transactions/${transactionId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to update transaction: ${response.status}`);
+    }
+
+    const updatedTransaction = await response.json();
+    console.log('Transaction updated in backend:', updatedTransaction);
+    return updatedTransaction;
+  } catch (error) {
+    console.error('Error updating transaction in backend:', error);
+    return null;
+  }
+};
+
 export const saveTransactionToBackend = async (transactionData) => {
+  if (!transactionData?.txHash) return null;
+  const payload = buildTransactionPayload(transactionData);
+
   try {
     const response = await fetch(`${API_BASE_URL}/blockchain-transactions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        txHash: transactionData.txHash,
-        operationType: transactionData.operation, // 'note_create', 'note_update', 'note_delete'
-        noteId: transactionData.noteId ? parseInt(transactionData.noteId) : null,
-        walletAddress: transactionData.senderAddress,
-        amount: transactionData.amount ? parseFloat(transactionData.amount) : null,
-        fee: transactionData.amount ? parseFloat(transactionData.amount) : null, // In this app, amount IS the fee
-        network: transactionData.network || 'preview',
-        status: transactionData.status || 'confirmed',
-        metadata: transactionData.metadata ? JSON.stringify(transactionData.metadata) : null,
-        noteTitle: transactionData.noteTitle || extractNoteTitleFromNote(transactionData.note),
-        description: transactionData.note,
-        errorMessage: transactionData.errorMessage || null,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
-      // If status is 409 (Conflict), transaction already exists - that's OK
       if (response.status === 409) {
-        console.log('Transaction already exists in database:', transactionData.txHash);
+        console.log('Transaction already exists in database, attempting update:', transactionData.txHash);
+        const existing = await fetchTransactionByHash(transactionData.txHash);
+        if (existing?.id) {
+          return await updateTransactionInBackend(existing.id, {
+            ...transactionData,
+            id: existing.id,
+          });
+        }
         return null;
       }
       throw new Error(`Failed to save transaction: ${response.status}`);
@@ -46,8 +103,6 @@ export const saveTransactionToBackend = async (transactionData) => {
     return savedTransaction;
   } catch (error) {
     console.error('Error saving transaction to backend:', error);
-    // Don't throw - we don't want to break the app if backend save fails
-    // The transaction is still recorded in localStorage
     return null;
   }
 };
@@ -225,7 +280,13 @@ export const syncTransactionsToBackend = async (transactions) => {
   
   for (const transaction of transactions) {
     // Only sync transactions that have a txHash (confirmed blockchain transactions)
-    if (transaction.txHash && transaction.status === 'confirmed') {
+    if (
+      transaction.txHash &&
+      transaction.status === 'confirmed' &&
+      transaction.feeSource === 'blockchain' &&
+      transaction.amount !== null &&
+      transaction.amount !== undefined
+    ) {
       await saveTransactionToBackend(transaction);
       // Small delay to avoid overwhelming the backend
       await new Promise(resolve => setTimeout(resolve, 100));
