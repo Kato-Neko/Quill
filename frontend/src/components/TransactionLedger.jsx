@@ -97,25 +97,35 @@ export default function TransactionLedger() {
   }
 
   const formatAmount = (amount) => {
+    if (amount === null || amount === undefined) {
+      return 'Fee pending'
+    }
     return parseFloat(amount).toFixed(6)
   }
 
 
-  const totalReceived = useMemo(() => {
-    return filteredTransactions
-      .filter(tx => tx.type === 'received' && tx.status !== 'failed')
-      .reduce((sum, tx) => sum + parseFloat(tx.amount), 0)
-  }, [filteredTransactions])
-
   const totalSent = useMemo(() => {
     return filteredTransactions
-      .filter(tx => tx.type === 'sent' && tx.status !== 'failed')
+      .filter(tx => tx.type === 'sent' && tx.status !== 'failed' && tx.amount !== null && tx.amount !== undefined)
       .reduce((sum, tx) => sum + parseFloat(tx.amount), 0)
   }, [filteredTransactions])
 
   // Use actual wallet balance (real blockchain balance) instead of calculating from transactions
   // Transactions are just a record of activity, but the balance is the actual wallet state
-  const netBalance = balance ? parseFloat(balance) : (totalReceived - totalSent)
+  const netBalance = balance ? parseFloat(balance) : 0
+
+  const getCardanoscanTxUrl = (txHash, txNetwork) => {
+    if (!txHash) return null
+    const resolvedNetwork = txNetwork || network
+    switch (resolvedNetwork) {
+      case "preview":
+        return `https://preview.cardanoscan.io/transaction/${txHash}`
+      case "preprod":
+        return `https://preprod.cardanoscan.io/transaction/${txHash}`
+      default:
+        return `https://cardanoscan.io/transaction/${txHash}`
+    }
+  }
 
   return (
     <div className="w-full">
@@ -166,14 +176,7 @@ export default function TransactionLedger() {
         </p>
         
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-          <Card>
-            <CardContent className="p-3">
-              <div className="text-xs text-muted-foreground mb-1">Recorded Received</div>
-              <div className="text-lg font-bold text-green-600">+{formatAmount(totalReceived)} ADA</div>
-              <div className="text-[10px] text-muted-foreground mt-1">From recorded transactions</div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
           <Card>
             <CardContent className="p-3">
               <div className="text-xs text-muted-foreground mb-1">Recorded Sent</div>
@@ -251,7 +254,13 @@ export default function TransactionLedger() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-semibold text-base">
-                              {isOutgoing ? '-' : '+'}{formatAmount(transaction.amount)} ADA
+                              {transaction.amount === null || transaction.amount === undefined ? (
+                                <span className="text-xs text-muted-foreground">Fee pending…</span>
+                              ) : (
+                                <>
+                                  {isOutgoing ? '-' : '+'}{formatAmount(transaction.amount)} ADA
+                                </>
+                              )}
                             </h3>
                             {transaction.operation && (
                               <Badge variant="outline" className="text-xs">
@@ -315,15 +324,21 @@ export default function TransactionLedger() {
                           </div>
                         )}
                         {transaction.status === 'confirmed' && transaction.txHash && (
-                          <a
-                            href={`https://cardanoscan.io/transaction/${transaction.txHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-500 hover:underline flex items-center gap-1"
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                            View on Cardanoscan
-                          </a>
+                          (() => {
+                            const url = getCardanoscanTxUrl(transaction.txHash, transaction.network)
+                            if (!url) return null
+                            return (
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-500 hover:underline flex items-center gap-1"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                View on Cardanoscan
+                              </a>
+                            )
+                          })()
                         )}
                       </div>
                     </div>

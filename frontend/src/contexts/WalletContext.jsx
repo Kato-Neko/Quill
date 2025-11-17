@@ -1,4 +1,4 @@
-import { createContext, useState, useContext, useEffect } from 'react';
+import { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { BrowserWallet } from '@meshsdk/core';
 import { 
   buildAndSendNoteOperationTransaction, 
@@ -7,6 +7,7 @@ import {
 } from '../lib/transactionBuilder';
 import { saveTransactionToBackend, syncTransactionsToBackend } from '../services/blockchainTransactionService';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 const WalletContext = createContext();
 
 export function WalletProvider({ children }) {
@@ -18,6 +19,27 @@ export function WalletProvider({ children }) {
   const [network, setNetwork] = useState('preview'); // 'preview', 'preprod', or 'mainnet'
   const [isSending, setIsSending] = useState(false);
   const [transactions, setTransactions] = useState([]);
+  const pendingFeeUpdatesRef = useRef(new Set());
+
+  const callKoiosProxy = async (targetNetwork, endpoint, payload) => {
+    const response = await fetch(`${API_BASE_URL}/koios/${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        network: targetNetwork,
+        ...payload,
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Koios proxy call failed (${endpoint})`);
+    }
+
+    return response.json();
+  };
 
   // Get the provider URL based on network
   const getProviderUrl = () => {
@@ -54,38 +76,14 @@ export function WalletProvider({ children }) {
   // Fetch balance from blockchain API for a given address
   const fetchBalanceFromAPI = async (addr) => {
     try {
-      // Try Koios API first (public, no API key needed for testnet)
-      let apiUrl;
-      if (network === 'preview') {
-        apiUrl = 'https://preview.koios.rest/api/v0/address_info';
-      } else if (network === 'preprod') {
-        apiUrl = 'https://preprod.koios.rest/api/v0/address_info';
-      } else {
-        // Mainnet - would need API key for Blockfrost
-        // For now, return 0 if mainnet
-        return '0';
-      }
-      
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          _addresses: [addr]
-        })
+      const data = await callKoiosProxy(network, 'address-info', {
+        addresses: [addr],
       });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data && Array.isArray(data) && data.length > 0) {
-          // Koios returns balance in Lovelace
-          const balanceLovelace = data[0].balance || data[0].balance_total || '0';
-          const balanceADA = (parseInt(balanceLovelace) / 1000000).toFixed(2);
-          return balanceADA;
-        }
-      } else {
-        console.warn('Koios API returned non-OK status:', response.status);
+
+      if (data && Array.isArray(data) && data.length > 0) {
+        const balanceLovelace = data[0].balance || data[0].balance_total || '0';
+        const balanceADA = (parseInt(balanceLovelace) / 1000000).toFixed(2);
+        return balanceADA;
       }
     } catch (error) {
       console.error('Failed to fetch balance from Koios API:', error);
@@ -197,20 +195,24 @@ export function WalletProvider({ children }) {
           try {
             const loadedTransactions = JSON.parse(savedTransactions);
             // Filter to only transactions for this wallet address
-            const walletTransactions = loadedTransactions.filter(tx => 
-              tx.senderAddress === savedAddress || 
-              tx.recipientAddress === savedAddress ||
-              (!tx.senderAddress && !tx.recipientAddress) // Legacy transactions without address
-            );
+            const walletTransactions = loadedTransactions
+              .filter(tx => 
+                tx.senderAddress === savedAddress || 
+                tx.recipientAddress === savedAddress ||
+                (!tx.senderAddress && !tx.recipientAddress) // Legacy transactions without address
+              )
+              .map(tx => ({
+                ...tx,
+                feeSource: tx.feeSource || (tx.txHash ? 'estimated' : 'local'),
+                backendSynced: Boolean(tx.backendSynced),
+              }));
             // Filter out old mock transactions:
             // 1. Fake initial balance transactions
             // 2. Transactions with status 'confirmed' but no txHash (old mock data)
             const filteredTransactions = walletTransactions.filter(tx => {
-              // Remove fake initial balance transactions
               if (tx.note?.toLowerCase().includes('initial wallet balance')) {
                 return false;
               }
-              // Remove old mock transactions: confirmed status but no txHash
               if (tx.status === 'confirmed' && !tx.txHash) {
                 return false;
               }
@@ -285,21 +287,21 @@ export function WalletProvider({ children }) {
       if (savedTransactions) {
         try {
           const loadedTransactions = JSON.parse(savedTransactions);
-          // Filter to only transactions for this wallet address
-          const walletTransactions = loadedTransactions.filter(tx => 
-            tx.senderAddress === addr || 
-            tx.recipientAddress === addr ||
-            (!tx.senderAddress && !tx.recipientAddress) // Legacy transactions without address
-          );
-          // Filter out old mock transactions:
-          // 1. Fake initial balance transactions
-          // 2. Transactions with status 'confirmed' but no txHash (old mock data)
+          const walletTransactions = loadedTransactions
+            .filter(tx => 
+              tx.senderAddress === addr || 
+              tx.recipientAddress === addr ||
+              (!tx.senderAddress && !tx.recipientAddress)
+            )
+            .map(tx => ({
+              ...tx,
+              feeSource: tx.feeSource || (tx.txHash ? 'estimated' : 'local'),
+              backendSynced: Boolean(tx.backendSynced),
+            }));
           const filteredTransactions = walletTransactions.filter(tx => {
-            // Remove fake initial balance transactions
             if (tx.note?.toLowerCase().includes('initial wallet balance')) {
               return false;
             }
-            // Remove old mock transactions: confirmed status but no txHash
             if (tx.status === 'confirmed' && !tx.txHash) {
               return false;
             }
@@ -357,21 +359,21 @@ export function WalletProvider({ children }) {
     if (savedTransactions) {
       try {
         const loadedTransactions = JSON.parse(savedTransactions);
-        // Filter to only transactions for this wallet address
-        const walletTransactions = loadedTransactions.filter(tx => 
-          tx.senderAddress === addr || 
-          tx.recipientAddress === addr ||
-          (!tx.senderAddress && !tx.recipientAddress) // Legacy transactions without address
-        );
-        // Filter out old mock transactions:
-        // 1. Fake initial balance transactions
-        // 2. Transactions with status 'confirmed' but no txHash (old mock data)
+        const walletTransactions = loadedTransactions
+          .filter(tx => 
+            tx.senderAddress === addr || 
+            tx.recipientAddress === addr ||
+            (!tx.senderAddress && !tx.recipientAddress)
+          )
+          .map(tx => ({
+            ...tx,
+            feeSource: tx.feeSource || (tx.txHash ? 'estimated' : 'local'),
+            backendSynced: Boolean(tx.backendSynced),
+          }));
         const filteredTransactions = walletTransactions.filter(tx => {
-          // Remove fake initial balance transactions
           if (tx.note?.toLowerCase().includes('initial wallet balance')) {
             return false;
           }
-          // Remove old mock transactions: confirmed status but no txHash
           if (tx.status === 'confirmed' && !tx.txHash) {
             return false;
           }
@@ -408,10 +410,57 @@ export function WalletProvider({ children }) {
   };
 
   // Save transactions to localStorage (per wallet address)
-  const saveTransactions = (txs, addr = address) => {
-    setTransactions(txs);
-    if (addr) {
-      localStorage.setItem(getTransactionsKey(addr), JSON.stringify(txs));
+  const saveTransactions = (txsOrUpdater, addr = address) => {
+    if (typeof txsOrUpdater === 'function') {
+      setTransactions((prev = []) => {
+        const next = txsOrUpdater(prev);
+        if (addr) {
+          localStorage.setItem(getTransactionsKey(addr), JSON.stringify(next));
+        }
+        return next;
+      });
+    } else {
+      setTransactions(txsOrUpdater);
+      if (addr) {
+        localStorage.setItem(getTransactionsKey(addr), JSON.stringify(txsOrUpdater));
+      }
+    }
+  };
+
+  const updateTransaction = (id, updates) => {
+    if (!id) return null;
+    let updatedTransaction = null;
+    saveTransactions((prev = []) => {
+      const next = prev.map(tx => {
+        if (tx.id === id) {
+          updatedTransaction = {
+            ...tx,
+            ...updates,
+            updatedAt: new Date().toISOString(),
+          };
+          return updatedTransaction;
+        }
+        return tx;
+      });
+      return next;
+    });
+    return updatedTransaction;
+  };
+
+  const normalizeTxHash = (hash) => (typeof hash === 'string' ? hash.trim() : hash);
+
+  const persistTransactionToBackend = async (transaction) => {
+    if (!transaction?.txHash || transaction.status !== 'confirmed') return;
+    if (transaction.feeSource !== 'blockchain') return;
+    if (transaction.backendSynced) return;
+
+    try {
+      const result = await saveTransactionToBackend(transaction);
+      if (result !== null) {
+        updateTransaction(transaction.id, { backendSynced: true });
+      }
+    } catch (error) {
+      console.error('Failed to sync transaction to backend:', error);
     }
   };
 
@@ -420,13 +469,15 @@ export function WalletProvider({ children }) {
     const newTransaction = {
       id: transactionData.id || Date.now().toString(),
       type: transactionData.type || 'sent',
-      amount: parseFloat(transactionData.amount),
+      amount: transactionData.amount !== undefined && transactionData.amount !== null
+        ? parseFloat(transactionData.amount)
+        : null,
       recipientAddress: transactionData.recipientAddress || null,
       senderAddress: transactionData.senderAddress || address,
       category: transactionData.category || 'Other',
       note: transactionData.note || null,
       date: transactionData.date || new Date().toISOString(),
-      txHash: transactionData.txHash || null,
+      txHash: normalizeTxHash(transactionData.txHash) || null,
       status: transactionData.status || 'recorded',
       createdAt: transactionData.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -434,17 +485,19 @@ export function WalletProvider({ children }) {
       noteId: transactionData.noteId || null,
       network: transactionData.network || network,
       noteTitle: transactionData.noteTitle || null,
+      feeSource: transactionData.feeSource || 'estimated',
+      backendSynced: transactionData.backendSynced || false,
     };
     
-    const updated = [newTransaction, ...transactions];
-    saveTransactions(updated);
+    saveTransactions((prev = []) => [newTransaction, ...prev]);
     
-    // Sync to backend if transaction has txHash (confirmed on blockchain)
-    if (newTransaction.txHash && newTransaction.status === 'confirmed') {
-      saveTransactionToBackend(newTransaction).catch(err => {
-        console.error('Failed to sync transaction to backend:', err);
-        // Non-blocking error - transaction is still saved in localStorage
-      });
+    if (
+      newTransaction.txHash &&
+      newTransaction.status === 'confirmed' &&
+      newTransaction.feeSource === 'blockchain' &&
+      newTransaction.amount !== null
+    ) {
+      persistTransactionToBackend(newTransaction);
     }
     
     return newTransaction;
@@ -539,17 +592,23 @@ export function WalletProvider({ children }) {
       // The transaction is now in the mempool and will be confirmed on blockchain
       // We mark it as 'confirmed' since it was successfully submitted
       // (Cardano transactions are typically confirmed within a few seconds)
-      addTransaction({
+      const ledgerEntry = addTransaction({
         type: 'sent',
-        amount: fee,
+        amount: null,
         category: 'Expense',
         note: `Note created: "${noteTitle}" (${metadata.category})`,
         operation: 'note_create',
         noteId: noteId.toString(),
         noteTitle: noteTitle,
         status: 'confirmed', // Confirmed = successfully submitted to network
-        txHash: txHash,
+        txHash: normalizeTxHash(txHash),
         network: network,
+        feeSource: 'estimated',
+        backendSynced: false,
+      });
+
+      updateTransactionWithActualFee(ledgerEntry.id, txHash, network).catch((err) => {
+        console.error('Failed to update ledger with actual fee (create):', err);
       });
 
       // Refresh balance after transaction
@@ -636,17 +695,23 @@ export function WalletProvider({ children }) {
       // The transaction is now in the mempool and will be confirmed on blockchain
       // We mark it as 'confirmed' since it was successfully submitted
       // (Cardano transactions are typically confirmed within a few seconds)
-      addTransaction({
+      const ledgerEntry = addTransaction({
         type: 'sent',
-        amount: fee,
+        amount: null,
         category: 'Expense',
         note: `Note updated: "${noteTitle}" (${metadata.category})`,
         operation: 'note_update',
         noteId: noteId.toString(),
         noteTitle: noteTitle,
         status: 'confirmed', // Confirmed = successfully submitted to network
-        txHash: txHash,
+        txHash: normalizeTxHash(txHash),
         network: network,
+        feeSource: 'estimated',
+        backendSynced: false,
+      });
+
+      updateTransactionWithActualFee(ledgerEntry.id, txHash, network).catch((err) => {
+        console.error('Failed to update ledger with actual fee (update):', err);
       });
 
       // Refresh balance after transaction
@@ -733,17 +798,23 @@ export function WalletProvider({ children }) {
       // The transaction is now in the mempool and will be confirmed on blockchain
       // We mark it as 'confirmed' since it was successfully submitted
       // (Cardano transactions are typically confirmed within a few seconds)
-      addTransaction({
+      const ledgerEntry = addTransaction({
         type: 'sent',
-        amount: fee,
+        amount: null,
         category: 'Expense',
         note: `Note deleted: "${noteTitle}" (${metadata.category})`,
         operation: 'note_delete',
         noteId: noteId.toString(),
         noteTitle: noteTitle,
         status: 'confirmed', // Confirmed = successfully submitted to network
-        txHash: txHash,
+        txHash: normalizeTxHash(txHash),
         network: network,
+        feeSource: 'estimated',
+        backendSynced: false,
+      });
+
+      updateTransactionWithActualFee(ledgerEntry.id, txHash, network).catch((err) => {
+        console.error('Failed to update ledger with actual fee (delete):', err);
       });
 
       // Refresh balance after transaction
@@ -762,15 +833,74 @@ export function WalletProvider({ children }) {
     }
   };
 
-  // Update a transaction
-  const updateTransaction = (id, updates) => {
-    const updated = transactions.map(tx => 
-      tx.id === id 
-        ? { ...tx, ...updates, updatedAt: new Date().toISOString() }
-        : tx
-    );
-    saveTransactions(updated);
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const MAX_FEE_FETCH_ATTEMPTS = 12; // try for up to ~60s (12 * 5s)
+  const FEE_FETCH_DELAY_MS = 5000;
+  const fetchTransactionFeeFromBlockchain = async (txHash, txNetwork = network, attempt = 0) => {
+    if (!txHash) return null;
+
+    try {
+      const data = await callKoiosProxy(txNetwork, 'tx-info', {
+        txHashes: [txHash],
+      });
+
+      if (Array.isArray(data) && data.length > 0 && data[0].fee) {
+        const feeADA = (parseInt(data[0].fee, 10) / 1000000).toFixed(6);
+        return feeADA;
+      }
+    } catch (error) {
+      console.error('Failed to fetch transaction fee from blockchain:', error);
+    }
+
+    if (attempt < MAX_FEE_FETCH_ATTEMPTS) {
+      await sleep(FEE_FETCH_DELAY_MS);
+      return fetchTransactionFeeFromBlockchain(txHash, attempt + 1);
+    }
+
+    return null;
   };
+
+  const updateTransactionWithActualFee = async (ledgerTransactionId, txHash, txNetwork = network) => {
+    if (!ledgerTransactionId || !txHash) return;
+    const actualFee = await fetchTransactionFeeFromBlockchain(normalizeTxHash(txHash), txNetwork);
+    if (actualFee !== null) {
+      const updatedTx = updateTransaction(ledgerTransactionId, {
+        amount: parseFloat(actualFee),
+        feeSource: 'blockchain',
+        backendSynced: false,
+      });
+      if (updatedTx) {
+        persistTransactionToBackend(updatedTx);
+      }
+    }
+  };
+
+  // Refresh any recorded transactions whose fees are still estimated
+  useEffect(() => {
+    const refreshPendingFees = async () => {
+      if (!address || !transactions.length) return;
+
+      for (const tx of transactions) {
+        if (tx.txHash && tx.feeSource !== 'blockchain') {
+          const key = `${tx.id || tx.txHash}`;
+          if (pendingFeeUpdatesRef.current.has(key)) continue;
+          pendingFeeUpdatesRef.current.add(key);
+          updateTransactionWithActualFee(tx.id, tx.txHash, tx.network || network)
+            .catch((err) => console.error('Fee update failed', err))
+            .finally(() => {
+              pendingFeeUpdatesRef.current.delete(key);
+            });
+          await sleep(500); // small delay to avoid spamming API
+        } else if (tx.txHash && tx.feeSource === 'blockchain' && !tx.backendSynced) {
+          await persistTransactionToBackend(tx);
+          await sleep(200);
+        }
+      }
+    };
+
+    refreshPendingFees();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, transactions]);
 
   // Delete a transaction
   const deleteTransaction = (id) => {
