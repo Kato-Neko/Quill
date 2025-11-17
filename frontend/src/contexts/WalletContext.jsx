@@ -525,313 +525,221 @@ export function WalletProvider({ children }) {
   };
 
   // Send real blockchain transaction for note creation
-  const recordNoteCreate = async ({
-    noteId,
-    noteTitle,
-    category,
-    createdAt,
-    updatedAt,
-    isPinned,
-    isStarred,
-    isArchived,
-    isDeleted,
-    fee = 0.10,
-  } = {}) => {
-    if (!address || !wallet || isViewOnly) {
-      console.warn('Wallet not connected or view-only mode. Transaction not sent.');
-      return null;
+// === FIXED: recordNoteCreate ===
+const recordNoteCreate = async ({
+  noteId,
+  noteTitle,
+  category,
+  createdAt,
+  updatedAt,
+  isPinned,
+  isStarred,
+  isArchived,
+  isDeleted,
+  fee = 0.10,
+} = {}) => {
+  // CRITICAL FIX: Don't block if wallet is reconnecting
+  if (!wallet) {
+    if (!address || isViewOnly) {
+      throw new Error('Wallet not connected. Please connect your wallet to create notes.');
+    }
+    throw new Error('Wallet is reconnecting. Please wait a moment and try again.');
+  }
+
+  if (!noteId || !noteTitle) {
+    throw new Error('Missing noteId or noteTitle');
+  }
+
+  try {
+    const metadata = normalizeNoteMetadata({ 
+      category, createdAt, updatedAt, isPinned, isStarred, isArchived, isDeleted 
+    });
+
+    const hasBalance = await hasSufficientBalance(wallet, fee);
+    if (!hasBalance) {
+      throw new Error(`Insufficient balance. Need at least ${fee} ADA.`);
     }
 
-    if (!noteId || !noteTitle) {
-      console.warn('Cannot record note creation without noteId and noteTitle');
-      return null;
-    }
+    const txHash = await buildAndSendNoteOperationTransaction({
+      wallet,
+      operationType: 'create',
+      noteId,
+      noteTitle,
+      noteCategory: metadata.category,
+      isPinned: metadata.isPinned,
+      isStarred: metadata.isStarred,
+      isArchived: metadata.isArchived,
+      isDeleted: metadata.isDeleted,
+      timeCreated: metadata.createdAt,
+      timeUpdated: metadata.updatedAt,
+      feeAmount: fee,
+      network,
+    });
 
-    try {
-      const metadata = normalizeNoteMetadata({ 
-        category, 
-        createdAt, 
-        updatedAt,
-        isPinned, 
-        isStarred, 
-        isArchived, 
-        isDeleted 
-      });
+    if (!txHash) throw new Error('Transaction failed: no hash returned');
 
-      // Check sufficient balance
-      const hasBalance = await hasSufficientBalance(wallet, fee);
-      if (!hasBalance) {
-        throw new Error(`Insufficient balance. Need ${fee} ADA for transaction.`);
-      }
+    addTransaction({
+      type: 'sent',
+      amount: fee,
+      category: 'Expense',
+      note: `Created note: "${noteTitle}"`,
+      operation: 'note_create',
+      noteId: noteId.toString(),
+      noteTitle,
+      status: 'confirmed',
+      txHash,
+      network,
+    });
 
-      // Build and send real blockchain transaction FIRST
-      // Only add to ledger if transaction is successfully submitted
-      const txHash = await buildAndSendNoteOperationTransaction({
-        wallet,
-        operationType: 'create',
-        noteId,
-        noteTitle,
-        noteCategory: metadata.category,
-        isPinned: metadata.isPinned,
-        isStarred: metadata.isStarred,
-        isArchived: metadata.isArchived,
-        isDeleted: metadata.isDeleted,
-        timeCreated: metadata.createdAt,
-        timeUpdated: metadata.updatedAt,
-        feeAmount: fee,
-        network,
-      });
-
-      // Verify we got a valid transaction hash
-      if (!txHash || typeof txHash !== 'string' || txHash.trim() === '') {
-        throw new Error('Transaction submitted but no valid hash returned');
-      }
-
-      // Only add transaction to ledger after successful submission
-      // Note: wallet.submitTx() only returns a hash after successful submission to network
-      // The transaction is now in the mempool and will be confirmed on blockchain
-      // We mark it as 'confirmed' since it was successfully submitted
-      // (Cardano transactions are typically confirmed within a few seconds)
-      const ledgerEntry = addTransaction({
-        type: 'sent',
-        amount: null,
-        category: 'Expense',
-        note: `Note created: "${noteTitle}" (${metadata.category})`,
-        operation: 'note_create',
-        noteId: noteId.toString(),
-        noteTitle: noteTitle,
-        status: 'confirmed', // Confirmed = successfully submitted to network
-        txHash: normalizeTxHash(txHash),
-        network: network,
-        feeSource: 'estimated',
-        backendSynced: false,
-      });
-
-      updateTransactionWithActualFee(ledgerEntry.id, txHash, network).catch((err) => {
-        console.error('Failed to update ledger with actual fee (create):', err);
-      });
-
-      // Refresh balance after transaction
-      await refreshBalance();
-
-      return txHash;
-    } catch (error) {
-      console.error('Failed to send note create transaction:', error);
-      
-      // Don't add failed transactions to the ledger
-      // They never happened on the blockchain, so they shouldn't affect balance
-      // The error will be shown to the user via the UI
-      
-      // Re-throw error so caller can handle it (show to user)
-      throw error;
-    }
-  };
+    await refreshBalance();
+    return txHash;
+  } catch (error) {
+    console.error('Create transaction failed:', error);
+    throw error; // Let UI show error
+  }
+};
 
   // Send real blockchain transaction for note update
-  const recordNoteUpdate = async ({
-    noteId,
-    noteTitle,
-    category,
-    createdAt,
-    updatedAt,
-    isPinned,
-    isStarred,
-    isArchived,
-    isDeleted,
-    fee = 0.17,
-  } = {}) => {
-    if (!address || !wallet || isViewOnly) {
-      console.warn('Wallet not connected or view-only mode. Transaction not sent.');
-      return null;
+// === FIXED: recordNoteUpdate ===
+const recordNoteUpdate = async ({
+  noteId,
+  noteTitle,
+  category,
+  createdAt,
+  updatedAt,
+  isPinned,
+  isStarred,
+  isArchived,
+  isDeleted,
+  fee = 0.17,
+} = {}) => {
+  if (!wallet) {
+    if (!address || isViewOnly) {
+      throw new Error('Wallet not connected. Please connect your wallet to update notes.');
     }
+    throw new Error('Wallet is reconnecting. Please wait a moment and try again.');
+  }
 
-    if (!noteId || !noteTitle) {
-      console.warn('Cannot record note update without noteId and noteTitle');
-      return null;
-    }
+  if (!noteId || !noteTitle) {
+    throw new Error('Missing noteId or noteTitle');
+  }
 
-    try {
-      const metadata = normalizeNoteMetadata({ 
-        category, 
-        createdAt, 
-        updatedAt,
-        isPinned, 
-        isStarred, 
-        isArchived, 
-        isDeleted 
-      });
+  try {
+    const metadata = normalizeNoteMetadata({ category, createdAt, updatedAt, isPinned, isStarred, isArchived, isDeleted });
 
-      // Check sufficient balance
-      const hasBalance = await hasSufficientBalance(wallet, fee);
-      if (!hasBalance) {
-        throw new Error(`Insufficient balance. Need ${fee} ADA for transaction.`);
-      }
+    const hasBalance = await hasSufficientBalance(wallet, fee);
+    if (!hasBalance) throw new Error(`Insufficient balance. Need ${fee} ADA.`);
 
-      // Build and send real blockchain transaction FIRST
-      // Only add to ledger if transaction is successfully submitted
-      const txHash = await buildAndSendNoteOperationTransaction({
-        wallet,
-        operationType: 'update',
-        noteId,
-        noteTitle,
-        noteCategory: metadata.category,
-        isPinned: metadata.isPinned,
-        isStarred: metadata.isStarred,
-        isArchived: metadata.isArchived,
-        isDeleted: metadata.isDeleted,
-        timeCreated: metadata.createdAt,
-        timeUpdated: metadata.updatedAt,
-        feeAmount: fee,
-        network,
-      });
+    const txHash = await buildAndSendNoteOperationTransaction({
+      wallet,
+      operationType: 'update',
+      noteId,
+      noteTitle,
+      noteCategory: metadata.category,
+      isPinned: metadata.isPinned,
+      isStarred: metadata.isStarred,
+      isArchived: metadata.isArchived,
+      isDeleted: metadata.isDeleted,
+      timeCreated: metadata.createdAt,
+      timeUpdated: metadata.updatedAt,
+      feeAmount: fee,
+      network,
+    });
 
-      // Verify we got a valid transaction hash
-      if (!txHash || typeof txHash !== 'string' || txHash.trim() === '') {
-        throw new Error('Transaction submitted but no valid hash returned');
-      }
+    if (!txHash) throw new Error('Update transaction failed');
 
-      // Only add transaction to ledger after successful submission
-      // Note: wallet.submitTx() only returns a hash after successful submission to network
-      // The transaction is now in the mempool and will be confirmed on blockchain
-      // We mark it as 'confirmed' since it was successfully submitted
-      // (Cardano transactions are typically confirmed within a few seconds)
-      const ledgerEntry = addTransaction({
-        type: 'sent',
-        amount: null,
-        category: 'Expense',
-        note: `Note updated: "${noteTitle}" (${metadata.category})`,
-        operation: 'note_update',
-        noteId: noteId.toString(),
-        noteTitle: noteTitle,
-        status: 'confirmed', // Confirmed = successfully submitted to network
-        txHash: normalizeTxHash(txHash),
-        network: network,
-        feeSource: 'estimated',
-        backendSynced: false,
-      });
+    addTransaction({
+      type: 'sent',
+      amount: fee,
+      category: 'Expense',
+      note: `Updated note: "${noteTitle}"`,
+      operation: 'note_update',
+      noteId: noteId.toString(),
+      noteTitle,
+      status: 'confirmed',
+      txHash,
+      network,
+    });
 
-      updateTransactionWithActualFee(ledgerEntry.id, txHash, network).catch((err) => {
-        console.error('Failed to update ledger with actual fee (update):', err);
-      });
-
-      // Refresh balance after transaction
-      await refreshBalance();
-
-      return txHash;
-    } catch (error) {
-      console.error('Failed to send note update transaction:', error);
-      
-      // Don't add failed transactions to the ledger
-      // They never happened on the blockchain, so they shouldn't affect balance
-      // The error will be shown to the user via the UI
-      
-      // Re-throw error so caller can handle it (show to user)
-      throw error;
-    }
-  };
+    await refreshBalance();
+    return txHash;
+  } catch (error) {
+    console.error('Update transaction failed:', error);
+    throw error;
+  }
+};
 
   // Send real blockchain transaction for note deletion
-  const recordNoteDelete = async ({
-    noteId,
-    noteTitle,
-    category,
-    createdAt,
-    updatedAt,
-    isPinned,
-    isStarred,
-    isArchived,
-    isDeleted,
-    fee = 0.12,
-  } = {}) => {
-    if (!address || !wallet || isViewOnly) {
-      console.warn('Wallet not connected or view-only mode. Transaction not sent.');
-      return null;
+// === FIXED: recordNoteDelete ===
+const recordNoteDelete = async ({
+  noteId,
+  noteTitle,
+  category,
+  createdAt,
+  updatedAt,
+  isPinned,
+  isStarred,
+  isArchived,
+  isDeleted,
+  fee = 0.12,
+} = {}) => {
+  if (!wallet) {
+    if (!address || isViewOnly) {
+      throw new Error('Wallet not connected. Please connect your wallet to delete notes.');
     }
+    throw new Error('Wallet is reconnecting. Please wait a moment and try again.');
+  }
 
-    if (!noteId || !noteTitle) {
-      console.warn('Cannot record note deletion without noteId and noteTitle');
-      return null;
-    }
+  if (!noteId || !noteTitle) {
+    throw new Error('Missing noteId or noteTitle');
+  }
 
-    try {
-      const metadata = normalizeNoteMetadata({ 
-        category, 
-        createdAt, 
-        updatedAt,
-        isPinned, 
-        isStarred, 
-        isArchived, 
-        isDeleted: true // For delete operations, isDeleted should be true
-      });
+  try {
+    const metadata = normalizeNoteMetadata({ 
+      category, createdAt, updatedAt, isPinned, isStarred, isArchived, isDeleted: true 
+    });
 
-      // Check sufficient balance
-      const hasBalance = await hasSufficientBalance(wallet, fee);
-      if (!hasBalance) {
-        throw new Error(`Insufficient balance. Need ${fee} ADA for transaction.`);
-      }
+    const hasBalance = await hasSufficientBalance(wallet, fee);
+    if (!hasBalance) throw new Error(`Insufficient balance. Need ${fee} ADA.`);
 
-      // Build and send real blockchain transaction FIRST
-      // Only add to ledger if transaction is successfully submitted
-      const txHash = await buildAndSendNoteOperationTransaction({
-        wallet,
-        operationType: 'delete',
-        noteId,
-        noteTitle,
-        noteCategory: metadata.category,
-        isPinned: metadata.isPinned,
-        isStarred: metadata.isStarred,
-        isArchived: metadata.isArchived,
-        isDeleted: metadata.isDeleted,
-        timeCreated: metadata.createdAt,
-        timeUpdated: metadata.updatedAt,
-        feeAmount: fee,
-        network,
-      });
+    const txHash = await buildAndSendNoteOperationTransaction({
+      wallet,
+      operationType: 'delete',
+      noteId,
+      noteTitle,
+      noteCategory: metadata.category,
+      isPinned: metadata.isPinned,
+      isStarred: metadata.isStarred,
+      isArchived: metadata.isArchived,
+      isDeleted: true,
+      timeCreated: metadata.createdAt,
+      timeUpdated: metadata.updatedAt,
+      feeAmount: fee,
+      network,
+    });
 
-      // Verify we got a valid transaction hash
-      if (!txHash || typeof txHash !== 'string' || txHash.trim() === '') {
-        throw new Error('Transaction submitted but no valid hash returned');
-      }
+    if (!txHash) throw new Error('Delete transaction failed');
 
-      // Only add transaction to ledger after successful submission
-      // Note: wallet.submitTx() only returns a hash after successful submission to network
-      // The transaction is now in the mempool and will be confirmed on blockchain
-      // We mark it as 'confirmed' since it was successfully submitted
-      // (Cardano transactions are typically confirmed within a few seconds)
-      const ledgerEntry = addTransaction({
-        type: 'sent',
-        amount: null,
-        category: 'Expense',
-        note: `Note deleted: "${noteTitle}" (${metadata.category})`,
-        operation: 'note_delete',
-        noteId: noteId.toString(),
-        noteTitle: noteTitle,
-        status: 'confirmed', // Confirmed = successfully submitted to network
-        txHash: normalizeTxHash(txHash),
-        network: network,
-        feeSource: 'estimated',
-        backendSynced: false,
-      });
+    addTransaction({
+      type: 'sent',
+      amount: fee,
+      category: 'Expense',
+      note: `Deleted note: "${noteTitle}"`,
+      operation: 'note_delete',
+      noteId: noteId.toString(),
+      noteTitle,
+      status: 'confirmed',
+      txHash,
+      network,
+    });
 
-      updateTransactionWithActualFee(ledgerEntry.id, txHash, network).catch((err) => {
-        console.error('Failed to update ledger with actual fee (delete):', err);
-      });
-
-      // Refresh balance after transaction
-      await refreshBalance();
-
-      return txHash;
-    } catch (error) {
-      console.error('Failed to send note delete transaction:', error);
-      
-      // Don't add failed transactions to the ledger
-      // They never happened on the blockchain, so they shouldn't affect balance
-      // The error will be shown to the user via the UI
-      
-      // Re-throw error so caller can handle it (show to user)
-      throw error;
-    }
-  };
+    await refreshBalance();
+    return txHash;
+  } catch (error) {
+    console.error('Delete transaction failed:', error);
+    throw error;
+  }
+};
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const MAX_FEE_FETCH_ATTEMPTS = 12; // try for up to ~60s (12 * 5s)
