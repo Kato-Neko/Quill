@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
-import { Wallet, LogOut, Plus } from 'lucide-react';
+import { Wallet, LogOut, Plus, RefreshCw } from 'lucide-react';
 
 export default function WalletConnect() {
   const { 
@@ -21,12 +21,14 @@ export default function WalletConnect() {
     connectWallet, 
     connectManualAddress,
     disconnectWallet,
-    getAvailableWallets
+    getAvailableWallets,
+    refreshBalance
   } = useWallet();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [manualAddress, setManualAddress] = useState('');
   const [showManualInput, setShowManualInput] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const shortenAddress = (addr) => {
     if (!addr) return '';
@@ -145,12 +147,36 @@ export default function WalletConnect() {
     );
   }
 
+  const handleRefresh = async () => {
+    if (isViewOnly) return;
+    setIsRefreshing(true);
+    try {
+      await refreshBalance();
+    } catch (error) {
+      console.error('Failed to refresh balance:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   return (
     <div className="flex items-center gap-3">
       <div className="text-right">
         <div className="text-sm font-medium">{shortenAddress(address)}</div>
-        <div className="text-xs text-gray-500">
-          {isViewOnly ? 'View-only' : `${balance} ADA`}
+        <div className="text-xs text-gray-500 flex items-center gap-2">
+          {isViewOnly ? 'View-only' : (
+            <>
+              <span>{balance} ADA</span>
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="hover:text-foreground transition-colors disabled:opacity-50"
+                title="Refresh balance"
+              >
+                <RefreshCw size={12} className={isRefreshing ? 'animate-spin' : ''} />
+              </button>
+            </>
+          )}
         </div>
       </div>
       <Button onClick={disconnectWallet} variant="outline" size="sm">
