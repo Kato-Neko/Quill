@@ -45,3 +45,56 @@ build/
 ### Application properties with sensitive data ###
 application-local.properties
 application-prod.properties
+
+# Java / Spring Boot
+/out/
+/bin/
+/classes/
+/dependency-reduced-pom.xml
+
+# Spring Boot specific
+*.log
+*.tmp
+*.pid
+*.gz
+
+# VS Code
+.history/
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# MySQL / Database
+*.sql
+*.db
+*.sql.gz
+*.dump
+*.mysql
+
+# MySQL Workbench files
+*.mwb
+*.bak
+*.backup
+
+# Environment / Config
+application-*.yml
+application-*.yaml
+application-*.properties
+*.secret
+*.key
+
+# Logs
+logs/
+*.out
+*.err
+
+# Gradle
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Maven
+.mvn/
+!/.mvn/wrapper/maven-wrapper.properties

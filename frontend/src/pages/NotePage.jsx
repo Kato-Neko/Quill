@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Link, useParams, useNavigate } from "react-router-dom"
+import { useWallet } from "@/contexts/WalletContext"
 // removed top dropdown menu
 import {
   AlertDialog,
@@ -23,6 +24,7 @@ export default function NotePage() {
   const params = useParams()
   const navigate = useNavigate()
   const noteId = params.id
+  const { recordNoteCreate, recordNoteUpdate, recordNoteDelete } = useWallet()
 
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
@@ -33,6 +35,12 @@ export default function NotePage() {
   const [noteType, setNoteType] = useState("text") // legacy flag; both sections visible now
   const [todos, setTodos] = useState([])
   const [showChecklist, setShowChecklist] = useState(false)
+  const [isTransactionPending, setIsTransactionPending] = useState(false)
+  const [noteCreatedAt, setNoteCreatedAt] = useState(null)
+  const [noteIsPinned, setNoteIsPinned] = useState(false)
+  const [noteIsStarred, setNoteIsStarred] = useState(false)
+  const [noteIsArchived, setNoteIsArchived] = useState(false)
+  const [noteUpdatedAt, setNoteUpdatedAt] = useState(null)
 
   // API base URL - adjust this to your backend URL
   const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api"
@@ -47,6 +55,9 @@ export default function NotePage() {
 // Auto-save after 5s of inactivity (new and existing notes)
 useEffect(() => {
   const debounce = setTimeout(() => {
+    // Do not auto-save if a transaction is already pending or the page is loading
+    if (isTransactionPending || loading) return;
+
     if (!title.trim()) return
     const hasText = content && content.trim().length > 0
     const hasTodos = Array.isArray(todos) && todos.length > 0
@@ -55,7 +66,7 @@ useEffect(() => {
   }, 5000)
 
   return () => clearTimeout(debounce)
-}, [title, content, JSON.stringify(todos), category])
+}, [title, content, JSON.stringify(todos), category, isTransactionPending, loading])
 
   const fetchNote = async () => {
     try {
@@ -70,6 +81,24 @@ useEffect(() => {
       const incomingTodos = Array.isArray(note.todos) ? note.todos : []
       setTodos(incomingTodos)
       setShowChecklist(incomingTodos.length > 0)
+      setNoteCreatedAt(
+        note.createdAt ||
+        note.created_at ||
+        note.createdDate ||
+        note.created_date ||
+        null
+      )
+      setNoteIsPinned(Boolean(note.isPinned))
+      // Store additional attributes for metadata
+      setNoteIsStarred(Boolean(note.starred || note.isStarred))
+      setNoteIsArchived(Boolean(note.archived || note.isArchived))
+      setNoteUpdatedAt(
+        note.updatedAt ||
+        note.updated_at ||
+        note.updatedDate ||
+        note.updated_date ||
+        null
+      )
     } catch (err) {
       setError(err.message)
       console.error('Error fetching note:', err)
@@ -80,71 +109,79 @@ useEffect(() => {
 
   const handleSave = async (options = { silent: false }) => {
     if (!title.trim()) {
-      setError("Title cannot be empty")
-      return
+      if (!options.silent) setError("Title is required");
+      return;
     }
-
-    // Allow save if either content or checklist has data
-    const hasText = content && content.trim().length > 0
-    const hasTodos = Array.isArray(todos) && todos.length > 0
-    if (!hasText && !hasTodos) {
-      setError("Add text or at least one checklist item")
-      return
+    if (!content.trim() && todos.length === 0) {
+      if (!options.silent) setError("Note cannot be empty");
+      return;
     }
-
-    setLoading(true)
-    setError(null)
-
+  
+    setError(null);
+    setIsTransactionPending(true);
+    if (!options.silent) setLoading(true);
+  
     try {
-      // Prepare payload: include both content and todos when present
-      const noteData = {
-        title: title.trim(),
-        content: hasText ? content.trim() : null,
-        category: category || null,
-        todos: hasTodos ? todos : null
-      }
-
-      // Use single notes endpoint in hybrid model
-      const baseEndpoint = "notes"
-      const url = noteId 
-        ? `${API_BASE_URL}/${baseEndpoint}/${noteId}` 
-        : `${API_BASE_URL}/${baseEndpoint}`
-      
-      const method = noteId ? 'PUT' : 'POST'
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(noteData)
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`)
-      }
-
-      // Success
-      if (options.silent) {
-        // If we created a new note silently, redirect to its edit page for subsequent auto-saves
-        if (!noteId) {
-          const saved = await response.json().catch(() => null)
-          const newId = saved && (saved.id || saved.note?.id)
-          if (newId) {
-            navigate(`/note/${newId}`, { replace: true })
-          }
+      // 1. PAY FIRST — Blockchain transaction
+      if (!noteId) {
+        // CREATE
+        await recordNoteCreate({
+          noteId: `temp-${Date.now()}`,
+          noteTitle: title.trim(),
+          category: category || "Personal",
+        });
+  
+        // 2. Only after payment → save to backend
+        const res = await fetch(`${API_BASE_URL}/notes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim(),
+            content: content.trim() || null,
+            category: category || "Personal",
+            todos: todos.length > 0 ? todos : null,
+          }),
+        });
+  
+        if (!res.ok) throw new Error("Failed to save note");
+  
+        const data = await res.json();
+        const newId = data.note?.id || data.id;
+  
+        if (options.silent && newId) {
+          navigate(`/note/${newId}`, { replace: true });
+        } else if (!options.silent) {
+          navigate("/");
         }
       } else {
-        navigate("/")
+        // UPDATE
+        await recordNoteUpdate({
+          noteId,
+          noteTitle: title.trim(),
+          category: category || "Personal",
+        });
+  
+        const res = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim(),
+            content: content.trim() || null,
+            category: category || "Personal",
+            todos: todos.length > 0 ? todos : null,
+          }),
+        });
+  
+        if (!res.ok) throw new Error("Failed to update note");
+        if (!options.silent) navigate("/");
       }
     } catch (err) {
-      setError(err.message)
-      console.error('Error saving note:', err)
+      setError(err.message || "Transaction failed. Note was not saved.");
     } finally {
-      setLoading(false)
+      setIsTransactionPending(false);
+      if (!options.silent) setLoading(false);
     }
-  }
+  };
 
   const handleDeleteClick = () => {
     if (!noteId) return
@@ -156,19 +193,46 @@ useEffect(() => {
 
     try {
       setLoading(true)
+      setIsTransactionPending(true)
       
-      // Use single notes endpoint in hybrid model
-      const baseEndpoint = "notes"
-      const response = await fetch(`${API_BASE_URL}/${baseEndpoint}/${noteId}`, {
-        method: 'DELETE'
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to delete note')
+      // STEP 1: Send blockchain transaction FIRST (before deleting from backend)
+      const noteTitle = title.trim() || "Untitled Note"
+      const deleteMetadata = {
+        noteId,
+        noteTitle,
+        category,
+        createdAt: noteCreatedAt || new Date().toISOString(),
+        updatedAt: noteUpdatedAt || new Date().toISOString(),
+        isPinned: noteIsPinned,
+        isStarred: noteIsStarred,
+        isArchived: noteIsArchived,
+        isDeleted: true,
       }
+      
+      try {
+        // Send transaction FIRST - wait for success
+        await recordNoteDelete(deleteMetadata)
+        
+        // Transaction succeeded - now delete from backend
+        const baseEndpoint = "notes"
+        const response = await fetch(`${API_BASE_URL}/${baseEndpoint}/${noteId}`, {
+          method: 'DELETE'
+        })
 
-      // Success - navigate back to notes list
-      navigate("/")
+        if (!response.ok) {
+          throw new Error('Failed to delete note from backend')
+        }
+
+        setIsTransactionPending(false)
+        // Success - navigate back to notes list only after transaction AND backend delete succeeded
+        navigate("/")
+      } catch (err) {
+        setIsTransactionPending(false)
+        // Transaction or backend operation failed
+        console.error('Delete operation failed:', err)
+        setError(`Delete failed: ${err.message || err.toString()}. The note will not be deleted. Please check your wallet connection and try again.`)
+        // Don't navigate - operation failed
+      }
     } catch (err) {
       setError(err.message)
       console.error('Error deleting note:', err)
@@ -232,12 +296,18 @@ useEffect(() => {
               className="ml-2"
               disabled={
                 loading ||
+                isTransactionPending ||
                 !title.trim() ||
                 (!content.trim() && (!Array.isArray(todos) || todos.length === 0))
               }
             >
               {loading ? (
                 <>Saving...</>
+              ) : isTransactionPending ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Processing Transaction...
+                </>
               ) : (
                 <>
                   <Save className="h-4 w-4 mr-2" />
@@ -248,6 +318,16 @@ useEffect(() => {
           </div>
         </div>
       </header>
+
+      {/* Transaction Pending Indicator */}
+      {isTransactionPending && (
+        <div className="mx-auto max-w-4xl p-4">
+          <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 rounded-md p-3 flex items-center gap-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
+            <span>Note saved! Waiting for blockchain transaction to complete. Please approve in your wallet.</span>
+          </div>
+        </div>
+      )}
 
       {/* Error Display */}
       {error && (

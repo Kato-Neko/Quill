@@ -1,13 +1,23 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, Plus, StickyNote, Archive, Trash2, Star, Pin, StarOff, Briefcase, User, BookOpen, Lightbulb, Home, CheckSquare, ShoppingCart } from "lucide-react"
+import { Search, Plus, StickyNote, Archive, Trash2, Star, Pin, StarOff, Briefcase, User, BookOpen, Lightbulb, Home, CheckSquare, ShoppingCart, Wallet, Link2, ArrowUpRight, ArrowDownLeft, Calendar, Tag, ExternalLink, ChevronDown, LogOut, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import NoteCard from "@/components/NoteCard"
+import WalletConnect from "@/components/WalletConnect"
+import TransactionLedger from "@/components/TransactionLedger"
+import { useWallet } from "@/contexts/WalletContext"
 import { Link, useNavigate } from "react-router-dom"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +28,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 // API base URL
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api"
@@ -29,21 +46,49 @@ export default function NotesList() {
   const [allNotes, setAllNotes] = useState([]) // Store all notes for category filtering
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All Notes")
+  const [walletView, setWalletView] = useState(null) // null, 'connect'
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [noteToDelete, setNoteToDelete] = useState(null)
+  const [walletDialogOpen, setWalletDialogOpen] = useState(false)
+  const [isDeleteTransactionPending, setIsDeleteTransactionPending] = useState(false)
   const navigate = useNavigate()
+  const { address, recordNoteDelete, disconnectWallet, isViewOnly, balance, connectWallet, getAvailableWallets, refreshBalance, network, setNetwork } = useWallet()
 
-  // Debounce search function
+  // Fetch notes only on mount and when category changes (not on search query changes)
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      fetchNotes()
-    }, 300) // 300ms debounce
+    fetchNotes()
+  }, [selectedCategory])
 
-    return () => clearTimeout(timeoutId)
-  }, [searchQuery, selectedCategory])
+  // Filter notes locally based on search query (no API calls)
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      // If search is empty, show all notes filtered by category
+      if (selectedCategory === "All Notes") {
+        setNotes(allNotes)
+      } else {
+        setNotes(allNotes.filter(note => note.category === selectedCategory))
+      }
+    } else {
+      // Filter locally from allNotes
+      const q = searchQuery.trim().toLowerCase()
+      let filtered = allNotes.filter(n => {
+        const inTitle = (n.title || "").toLowerCase().includes(q)
+        const inContent = (n.content || "").toLowerCase().includes(q)
+        const inTodos = Array.isArray(n.todos) && n.todos.some(t => (t.text || "").toLowerCase().includes(q))
+        return inTitle || inContent || inTodos
+      })
+      
+      // Apply category filter if not "All Notes"
+      if (selectedCategory !== "All Notes") {
+        filtered = filtered.filter(n => n.category === selectedCategory)
+      }
+      
+      setNotes(filtered)
+    }
+  }, [searchQuery, allNotes, selectedCategory])
 
   const fetchNotes = async () => {
     setLoading(true)
@@ -73,24 +118,10 @@ export default function NotesList() {
         }) : 'Unknown date'
       }))
       
-      // Store all notes for category filtering
+      // Store all notes for category filtering and local search
       setAllNotes(transformedNotes)
       
-      // Apply search locally across title, content, todos, then category
-      const q = searchQuery.trim().toLowerCase()
-      let filtered = transformedNotes
-      if (q) {
-        filtered = transformedNotes.filter(n => {
-          const inTitle = (n.title || "").toLowerCase().includes(q)
-          const inContent = (n.content || "").toLowerCase().includes(q)
-          const inTodos = Array.isArray(n.todos) && n.todos.some(t => (t.text || "").toLowerCase().includes(q))
-          return inTitle || inContent || inTodos
-        })
-      }
-      if (selectedCategory !== "All Notes") {
-        filtered = filtered.filter(n => n.category === selectedCategory)
-      }
-      setNotes(filtered)
+      // Notes will be filtered by the useEffect hook based on searchQuery and selectedCategory
     } catch (err) {
       setError(err.message)
       console.error('Error fetching notes:', err)
@@ -107,26 +138,34 @@ export default function NotesList() {
   }
 
   const handleDeleteConfirm = async () => {
-    if (!noteToDelete) return
-
+    if (!noteToDelete) return;
+  
+    const note = allNotes.find(n => n.id === noteToDelete);
+    if (!note) return;
+  
+    setIsDeleteTransactionPending(true);
+    setError(null);
+  
     try {
-      const response = await fetch(`${API_BASE_URL}/notes/${noteToDelete}`, {
-        method: 'DELETE'
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to delete note')
-      }
-
-      // Refresh the notes list
-      fetchNotes()
-      setDeleteDialogOpen(false)
-      setNoteToDelete(null)
+      // 1. PAY FIRST
+      await recordNoteDelete({
+        noteId: noteToDelete,
+        noteTitle: note.title || "Untitled",
+        category: note.category || "Personal",
+      });
+  
+      // 2. Then delete from backend
+      const res = await fetch(`${API_BASE_URL}/notes/${noteToDelete}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete from server");
+  
+      fetchNotes();
+      setDeleteDialogOpen(false);
     } catch (err) {
-      setError(err.message)
-      console.error('Error deleting note:', err)
+      setError(err.message || "Transaction failed. Note was not deleted.");
+    } finally {
+      setIsDeleteTransactionPending(false);
     }
-  }
+  };
 
   const handlePinToggle = async (noteId) => {
     try {
@@ -271,21 +310,22 @@ export default function NotesList() {
         <nav className="flex-1 p-2">
           {categories.map((category) => {
             const getCategoryIcon = (cat) => {
+              const iconClass = sidebarOpen ? "h-4 w-4 mr-3" : "h-4 w-4";
               switch (cat) {
                 case "All Notes":
-                  return <Home className="h-4 w-4 mr-3" />
+                  return <Home className={iconClass} />
                 case "Work":
-                  return <Briefcase className="h-4 w-4 mr-3" />
+                  return <Briefcase className={iconClass} />
                 case "Personal":
-                  return <User className="h-4 w-4 mr-3" />
+                  return <User className={iconClass} />
                 case "Learning":
-                  return <BookOpen className="h-4 w-4 mr-3" />
+                  return <BookOpen className={iconClass} />
                 case "Ideas":
-                  return <Lightbulb className="h-4 w-4 mr-3" />
+                  return <Lightbulb className={iconClass} />
                 case "Shopping":
-                  return <ShoppingCart className="h-4 w-4 mr-3" />
+                  return <ShoppingCart className={iconClass} />
                 default:
-                  return <StickyNote className="h-4 w-4 mr-3" />
+                  return <StickyNote className={iconClass} />
               }
             }
 
@@ -293,12 +333,15 @@ export default function NotesList() {
               <Button
                 key={category}
                 variant={selectedCategory === category ? "default" : "ghost"}
-                className={`w-full justify-start mb-1 ${
+                className={`w-full ${sidebarOpen ? "justify-start" : "justify-center"} mb-1 ${
                   selectedCategory === category
                     ? "bg-sidebar-primary text-sidebar-primary-foreground"
                     : "text-sidebar-foreground hover:bg-sidebar-accent"
-                } ${category !== "All Notes" ? "pl-10" : ""}`}
-                onClick={() => setSelectedCategory(category)}
+                } ${sidebarOpen && category !== "All Notes" ? "pl-10" : ""}`}
+                onClick={() => {
+                  setSelectedCategory(category)
+                  setWalletView(null)
+                }}
               >
                 {getCategoryIcon(category)}
                 {sidebarOpen && category}
@@ -307,31 +350,61 @@ export default function NotesList() {
           })}
 
           <div className="mt-6">
-            {/* Todo Lists page removed in hybrid setup */}
+            {/* Wallet section */}
+            <Button
+              variant={walletView !== null ? "default" : "ghost"}
+              onClick={() => setWalletView(null)}
+              className={`w-full ${sidebarOpen ? "justify-start" : "justify-center"} mb-1 ${
+                walletView !== null
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent"
+              }`}
+            >
+              <Wallet className={`h-4 w-4 ${sidebarOpen ? "mr-3" : ""}`} />
+              {sidebarOpen && "Wallet"}
+            </Button>
+            {sidebarOpen && (
+              <>
+                <Button
+                  variant={walletView === "connect" ? "default" : "ghost"}
+                  onClick={() => setWalletView("connect")}
+                  className={`w-full justify-start mb-1 pl-10 ${
+                    walletView === "connect"
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                      : "text-sidebar-foreground hover:bg-sidebar-accent"
+                  }`}
+                >
+                  <Link2 className="h-4 w-4 mr-3" />
+                  Connect
+                </Button>
+              </>
+            )}
+
+            {/* Quick links */}
             <Link to="/favorites">
               <Button
                 variant="ghost"
-                className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
+                className={`w-full ${sidebarOpen ? "justify-start" : "justify-center"} mb-1 text-sidebar-foreground hover:bg-sidebar-accent`}
               >
-                <Star className="h-4 w-4 mr-3 text-yellow-500" />
+                <Star className={`h-4 w-4 ${sidebarOpen ? "mr-3" : ""} text-yellow-500`} />
                 {sidebarOpen && "Favorites"}
               </Button>
             </Link>
             <Link to="/archive">
               <Button
                 variant="ghost"
-                className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
+                className={`w-full ${sidebarOpen ? "justify-start" : "justify-center"} mb-1 text-sidebar-foreground hover:bg-sidebar-accent`}
               >
-                <Archive className="h-4 w-4 mr-3 text-blue-500" />
+                <Archive className={`h-4 w-4 ${sidebarOpen ? "mr-3" : ""} text-blue-500`} />
                 {sidebarOpen && "Archive"}
               </Button>
             </Link>
             <Link to="/trash">
               <Button
                 variant="ghost"
-                className="w-full justify-start mb-1 text-sidebar-foreground hover:bg-sidebar-accent"
+                className={`w-full ${sidebarOpen ? "justify-start" : "justify-center"} mb-1 text-sidebar-foreground hover:bg-sidebar-accent`}
               >
-                <Trash2 className="h-4 w-4 mr-3 text-red-500" />
+                <Trash2 className={`h-4 w-4 ${sidebarOpen ? "mr-3" : ""} text-red-500`} />
                 {sidebarOpen && "Trash"}
               </Button>
             </Link>
@@ -343,30 +416,83 @@ export default function NotesList() {
       <div className="flex-1 flex flex-col">
         {/* Header */}
         <header className="border-b border-border p-4">
-          <div className="max-w-2xl mx-auto">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input
-                placeholder="Search notes..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 bg-input border-border"
-              />
-              {searchQuery && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-                >
-                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </Button>
-              )}
+          <div className="max-w-6xl mx-auto flex items-center gap-6">
+            <div className="flex-1 max-w-2xl">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                <Input
+                  placeholder="Search notes..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 bg-input border-border"
+                />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                  >
+                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </Button>
+                )}
+              </div>
             </div>
+            {address ? (
+              <div className="flex-shrink-0">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex items-center gap-2 px-3 py-2 rounded-md bg-accent/50 hover:bg-accent transition-colors">
+                      <User className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-mono text-foreground">{address.slice(0, 8)}...{address.slice(-8)}</span>
+                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <div className="px-2 py-1.5 text-sm">
+                      <div className="font-medium">{address.slice(0, 8)}...{address.slice(-8)}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {isViewOnly && balance === '0' ? 'View-only mode' : `${balance} ADA`}
+                        {isViewOnly && balance !== '0' && (
+                          <span className="ml-1 text-[10px] opacity-70">(view-only)</span>
+                        )}
+                      </div>
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem 
+                      onClick={() => setWalletDialogOpen(true)}
+                      className="cursor-pointer"
+                    >
+                      <Settings className="mr-2 h-4 w-4" />
+                      Change Wallet
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={disconnectWallet}
+                      className="cursor-pointer text-destructive focus:text-destructive"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Disconnect
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ) : (
+              <div className="flex-shrink-0">
+                <WalletConnect />
+              </div>
+            )}
           </div>
         </header>
+
+        {/* Transaction Pending Indicator */}
+        {isDeleteTransactionPending && (
+          <div className="p-4 bg-yellow-500/10 border-b border-yellow-500/30 text-yellow-600 text-sm flex items-center gap-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
+            <span>Note deleted! Waiting for blockchain transaction to complete. Please approve in your wallet.</span>
+          </div>
+        )}
 
         {/* Error Display */}
         {error && (
@@ -404,41 +530,63 @@ export default function NotesList() {
           </div>
         )}
 
-        {/* Notes Grid */}
+        {/* Notes Grid or Wallet View */}
         <main className="flex-1 overflow-auto p-6">
           <div className="max-w-6xl mx-auto">
-            {/* Pinned Notes */}
-            {pinnedNotes.length > 0 && (
-              <div className="mb-8">
-                <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">Pinned</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {pinnedNotes.map((note) => (
-                    <NoteCard key={note.id} note={note} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onArchive={handleArchive} />
-                  ))}
-                </div>
+            {walletView === "connect" ? (
+              <div className="w-full space-y-6">
+                {!address ? (
+                  <div className="flex items-center justify-center min-h-[400px]">
+                    <div className="w-full max-w-md space-y-4 text-center">
+                      <h2 className="text-2xl font-bold">Connect Your Wallet</h2>
+                      <p className="text-sm text-muted-foreground">
+                        Connect your wallet to start tracking transactions automatically when you create, update, or delete notes.
+                      </p>
+                      <div className="pt-4">
+                        <WalletConnect />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <TransactionLedger />
+                )}
               </div>
+            ) : (
+              <>
+                {/* Pinned Notes */}
+                {pinnedNotes.length > 0 && (
+                  <div className="mb-8">
+                    <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">Pinned</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {pinnedNotes.map((note) => (
+                        <NoteCard key={note.id} note={note} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onArchive={handleArchive} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Regular Notes */}
+                {regularNotes.length > 0 && (
+                  <div>
+                    <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">
+                      {searchQuery ? "Search Results" : "Others"}
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {regularNotes.map((note) => (
+                        <NoteCard key={note.id} note={note} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onArchive={handleArchive} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
-            {/* Regular Notes */}
-            {regularNotes.length > 0 && (
-              <div>
-                <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wide">
-                  {searchQuery ? "Search Results" : "Others"}
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {regularNotes.map((note) => (
-                    <NoteCard key={note.id} note={note} onDelete={handleDeleteClick} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle} onArchive={handleArchive} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {loading && notes.length === 0 ? (
+            {walletView === null && loading && notes.length === 0 ? (
               <div className="text-center py-12">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
                 <p className="text-muted-foreground">Loading your notes...</p>
               </div>
-            ) : filteredNotes.length === 0 && !loading ? (
+            ) : walletView === null && filteredNotes.length === 0 && !loading ? (
               <div className="text-center py-12">
                 <StickyNote className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-lg font-medium mb-2 text-foreground">
@@ -488,6 +636,40 @@ export default function NotesList() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Change Wallet Dialog */}
+      <Dialog open={walletDialogOpen} onOpenChange={setWalletDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Wallet</DialogTitle>
+            <DialogDescription>
+              Select a different wallet to connect. The current wallet will be disconnected.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-4">
+            {getAvailableWallets().map((wallet) => (
+              <Button
+                key={wallet.name}
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => {
+                  disconnectWallet();
+                  connectWallet(wallet.name);
+                  setWalletDialogOpen(false);
+                }}
+              >
+                <Wallet className="mr-2" size={18} />
+                {wallet.name}
+              </Button>
+            ))}
+            {getAvailableWallets().length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No wallets detected. Please install a Cardano wallet extension.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
