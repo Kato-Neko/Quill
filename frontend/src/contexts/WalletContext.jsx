@@ -1,5 +1,10 @@
 import { createContext, useState, useContext, useEffect } from 'react';
 import { BrowserWallet } from '@meshsdk/core';
+import { 
+  buildAndSendNoteOperationTransaction, 
+  estimateTransactionFee,
+  hasSufficientBalance 
+} from '../lib/transactionBuilder';
 
 const WalletContext = createContext();
 
@@ -182,10 +187,20 @@ export function WalletProvider({ children }) {
               tx.recipientAddress === savedAddress ||
               (!tx.senderAddress && !tx.recipientAddress) // Legacy transactions without address
             );
-            // Also filter out fake initial balance transactions
-            const filteredTransactions = walletTransactions.filter(tx => 
-              !tx.note?.toLowerCase().includes('initial wallet balance')
-            );
+            // Filter out old mock transactions:
+            // 1. Fake initial balance transactions
+            // 2. Transactions with status 'confirmed' but no txHash (old mock data)
+            const filteredTransactions = walletTransactions.filter(tx => {
+              // Remove fake initial balance transactions
+              if (tx.note?.toLowerCase().includes('initial wallet balance')) {
+                return false;
+              }
+              // Remove old mock transactions: confirmed status but no txHash
+              if (tx.status === 'confirmed' && !tx.txHash) {
+                return false;
+              }
+              return true;
+            });
             
             if (filteredTransactions.length !== loadedTransactions.length) {
               // Save filtered transactions back if we removed any
@@ -261,10 +276,20 @@ export function WalletProvider({ children }) {
             tx.recipientAddress === addr ||
             (!tx.senderAddress && !tx.recipientAddress) // Legacy transactions without address
           );
-          // Also filter out fake initial balance transactions
-          const filteredTransactions = walletTransactions.filter(tx => 
-            !tx.note?.toLowerCase().includes('initial wallet balance')
-          );
+          // Filter out old mock transactions:
+          // 1. Fake initial balance transactions
+          // 2. Transactions with status 'confirmed' but no txHash (old mock data)
+          const filteredTransactions = walletTransactions.filter(tx => {
+            // Remove fake initial balance transactions
+            if (tx.note?.toLowerCase().includes('initial wallet balance')) {
+              return false;
+            }
+            // Remove old mock transactions: confirmed status but no txHash
+            if (tx.status === 'confirmed' && !tx.txHash) {
+              return false;
+            }
+            return true;
+          });
           
           if (filteredTransactions.length !== loadedTransactions.length) {
             setTransactions(filteredTransactions);
@@ -318,10 +343,20 @@ export function WalletProvider({ children }) {
           tx.recipientAddress === addr ||
           (!tx.senderAddress && !tx.recipientAddress) // Legacy transactions without address
         );
-        // Also filter out fake initial balance transactions
-        const filteredTransactions = walletTransactions.filter(tx => 
-          !tx.note?.toLowerCase().includes('initial wallet balance')
-        );
+        // Filter out old mock transactions:
+        // 1. Fake initial balance transactions
+        // 2. Transactions with status 'confirmed' but no txHash (old mock data)
+        const filteredTransactions = walletTransactions.filter(tx => {
+          // Remove fake initial balance transactions
+          if (tx.note?.toLowerCase().includes('initial wallet balance')) {
+            return false;
+          }
+          // Remove old mock transactions: confirmed status but no txHash
+          if (tx.status === 'confirmed' && !tx.txHash) {
+            return false;
+          }
+          return true;
+        });
         
         if (filteredTransactions.length !== loadedTransactions.length) {
           setTransactions(filteredTransactions);
@@ -384,49 +419,190 @@ export function WalletProvider({ children }) {
     return newTransaction;
   };
 
-  // Record transaction for note creation
-  const recordNoteCreate = (noteId, noteTitle, fee = 0.10) => {
-    if (!address) return; // Only record if wallet is connected
-    
-    addTransaction({
-      type: 'sent',
-      amount: fee,
-      category: 'Expense',
-      note: `Note created: "${noteTitle}"`,
-      operation: 'note_create',
-      noteId: noteId.toString(),
-      status: 'confirmed',
-    });
+  // Send real blockchain transaction for note creation
+  const recordNoteCreate = async (noteId, noteTitle, fee = 0.18) => {
+    if (!address || !wallet || isViewOnly) {
+      console.warn('Wallet not connected or view-only mode. Transaction not sent.');
+      return null;
+    }
+
+    try {
+      // Check sufficient balance
+      const hasBalance = await hasSufficientBalance(wallet, fee);
+      if (!hasBalance) {
+        throw new Error(`Insufficient balance. Need ${fee} ADA for transaction.`);
+      }
+
+      // Build and send real blockchain transaction FIRST
+      // Only add to ledger if transaction is successfully submitted
+      const txHash = await buildAndSendNoteOperationTransaction({
+        wallet,
+        operationType: 'create',
+        noteId,
+        noteTitle,
+        feeAmount: fee,
+        network,
+      });
+
+      // Verify we got a valid transaction hash
+      if (!txHash || typeof txHash !== 'string' || txHash.trim() === '') {
+        throw new Error('Transaction submitted but no valid hash returned');
+      }
+
+      // Only add transaction to ledger after successful submission
+      // Note: wallet.submitTx() only returns a hash after successful submission to network
+      // The transaction is now in the mempool and will be confirmed on blockchain
+      // We mark it as 'confirmed' since it was successfully submitted
+      // (Cardano transactions are typically confirmed within a few seconds)
+      addTransaction({
+        type: 'sent',
+        amount: fee,
+        category: 'Expense',
+        note: `Note created: "${noteTitle}"`,
+        operation: 'note_create',
+        noteId: noteId.toString(),
+        status: 'confirmed', // Confirmed = successfully submitted to network
+        txHash: txHash,
+      });
+
+      // Refresh balance after transaction
+      await refreshBalance();
+
+      return txHash;
+    } catch (error) {
+      console.error('Failed to send note create transaction:', error);
+      
+      // Don't add failed transactions to the ledger
+      // They never happened on the blockchain, so they shouldn't affect balance
+      // The error will be shown to the user via the UI
+      
+      // Re-throw error so caller can handle it (show to user)
+      throw error;
+    }
   };
 
-  // Record transaction for note update
-  const recordNoteUpdate = (noteId, noteTitle, fee = 0.17) => {
-    if (!address) return; // Only record if wallet is connected
-    
-    addTransaction({
-      type: 'sent',
-      amount: fee,
-      category: 'Expense',
-      note: `Note updated: "${noteTitle}"`,
-      operation: 'note_update',
-      noteId: noteId.toString(),
-      status: 'confirmed',
-    });
+  // Send real blockchain transaction for note update
+  const recordNoteUpdate = async (noteId, noteTitle, fee = 0.18) => {
+    if (!address || !wallet || isViewOnly) {
+      console.warn('Wallet not connected or view-only mode. Transaction not sent.');
+      return null;
+    }
+
+    try {
+      // Check sufficient balance
+      const hasBalance = await hasSufficientBalance(wallet, fee);
+      if (!hasBalance) {
+        throw new Error(`Insufficient balance. Need ${fee} ADA for transaction.`);
+      }
+
+      // Build and send real blockchain transaction FIRST
+      // Only add to ledger if transaction is successfully submitted
+      const txHash = await buildAndSendNoteOperationTransaction({
+        wallet,
+        operationType: 'update',
+        noteId,
+        noteTitle,
+        feeAmount: fee,
+        network,
+      });
+
+      // Verify we got a valid transaction hash
+      if (!txHash || typeof txHash !== 'string' || txHash.trim() === '') {
+        throw new Error('Transaction submitted but no valid hash returned');
+      }
+
+      // Only add transaction to ledger after successful submission
+      // Note: wallet.submitTx() only returns a hash after successful submission to network
+      // The transaction is now in the mempool and will be confirmed on blockchain
+      // We mark it as 'confirmed' since it was successfully submitted
+      // (Cardano transactions are typically confirmed within a few seconds)
+      addTransaction({
+        type: 'sent',
+        amount: fee,
+        category: 'Expense',
+        note: `Note updated: "${noteTitle}"`,
+        operation: 'note_update',
+        noteId: noteId.toString(),
+        status: 'confirmed', // Confirmed = successfully submitted to network
+        txHash: txHash,
+      });
+
+      // Refresh balance after transaction
+      await refreshBalance();
+
+      return txHash;
+    } catch (error) {
+      console.error('Failed to send note update transaction:', error);
+      
+      // Don't add failed transactions to the ledger
+      // They never happened on the blockchain, so they shouldn't affect balance
+      // The error will be shown to the user via the UI
+      
+      // Re-throw error so caller can handle it (show to user)
+      throw error;
+    }
   };
 
-  // Record transaction for note deletion
-  const recordNoteDelete = (noteId, noteTitle, fee = 0.12) => {
-    if (!address) return; // Only record if wallet is connected
-    
-    addTransaction({
-      type: 'sent',
-      amount: fee,
-      category: 'Expense',
-      note: `Note deleted: "${noteTitle}"`,
-      operation: 'note_delete',
-      noteId: noteId.toString(),
-      status: 'confirmed',
-    });
+  // Send real blockchain transaction for note deletion
+  const recordNoteDelete = async (noteId, noteTitle, fee = 0.18) => {
+    if (!address || !wallet || isViewOnly) {
+      console.warn('Wallet not connected or view-only mode. Transaction not sent.');
+      return null;
+    }
+
+    try {
+      // Check sufficient balance
+      const hasBalance = await hasSufficientBalance(wallet, fee);
+      if (!hasBalance) {
+        throw new Error(`Insufficient balance. Need ${fee} ADA for transaction.`);
+      }
+
+      // Build and send real blockchain transaction FIRST
+      // Only add to ledger if transaction is successfully submitted
+      const txHash = await buildAndSendNoteOperationTransaction({
+        wallet,
+        operationType: 'delete',
+        noteId,
+        noteTitle,
+        feeAmount: fee,
+        network,
+      });
+
+      // Verify we got a valid transaction hash
+      if (!txHash || typeof txHash !== 'string' || txHash.trim() === '') {
+        throw new Error('Transaction submitted but no valid hash returned');
+      }
+
+      // Only add transaction to ledger after successful submission
+      // Note: wallet.submitTx() only returns a hash after successful submission to network
+      // The transaction is now in the mempool and will be confirmed on blockchain
+      // We mark it as 'confirmed' since it was successfully submitted
+      // (Cardano transactions are typically confirmed within a few seconds)
+      addTransaction({
+        type: 'sent',
+        amount: fee,
+        category: 'Expense',
+        note: `Note deleted: "${noteTitle}"`,
+        operation: 'note_delete',
+        noteId: noteId.toString(),
+        status: 'confirmed', // Confirmed = successfully submitted to network
+        txHash: txHash,
+      });
+
+      // Refresh balance after transaction
+      await refreshBalance();
+
+      return txHash;
+    } catch (error) {
+      console.error('Failed to send note delete transaction:', error);
+      
+      // Don't add failed transactions to the ledger
+      // They never happened on the blockchain, so they shouldn't affect balance
+      // The error will be shown to the user via the UI
+      
+      // Re-throw error so caller can handle it (show to user)
+      throw error;
+    }
   };
 
   // Update a transaction
@@ -524,14 +700,50 @@ export function WalletProvider({ children }) {
 
   // Refresh balance
   const refreshBalance = async () => {
-    if (!wallet || isViewOnly) return;
+    console.log('Refreshing balance...', { isViewOnly, hasAddress: !!address, hasWallet: !!wallet });
+    
+    if (isViewOnly && address) {
+      // For view-only mode, fetch from blockchain API
+      try {
+        console.log('Fetching balance from API for view-only address:', address);
+        const fetchedBalance = await fetchBalanceFromAPI(address);
+        console.log('Balance fetched from API:', fetchedBalance);
+        setBalance(fetchedBalance);
+        return;
+      } catch (error) {
+        console.error('Failed to refresh balance from API:', error);
+        throw error;
+      }
+    }
+
+    if (!wallet) {
+      console.warn('Cannot refresh balance: no wallet connected');
+      return;
+    }
 
     try {
+      console.log('Fetching balance from wallet...');
       const bal = await wallet.getBalance();
-      const balanceADA = (parseInt(bal[0].quantity) / 1000000).toFixed(2);
+      console.log('Raw balance from wallet:', bal);
+      const balanceADA = (parseInt(bal[0]?.quantity || 0) / 1000000).toFixed(2);
+      console.log('Balance in ADA:', balanceADA);
       setBalance(balanceADA);
     } catch (error) {
-      console.error('Failed to refresh balance:', error);
+      console.error('Failed to refresh balance from wallet:', error);
+      // Fallback to API if wallet method fails
+      if (address) {
+        try {
+          console.log('Falling back to API for balance...');
+          const fetchedBalance = await fetchBalanceFromAPI(address);
+          console.log('Balance fetched from API (fallback):', fetchedBalance);
+          setBalance(fetchedBalance);
+        } catch (apiError) {
+          console.error('Failed to refresh balance from API (fallback):', apiError);
+          throw apiError;
+        }
+      } else {
+        throw error;
+      }
     }
   };
 

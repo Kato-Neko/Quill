@@ -35,6 +35,7 @@ export default function NotePage() {
   const [noteType, setNoteType] = useState("text") // legacy flag; both sections visible now
   const [todos, setTodos] = useState([])
   const [showChecklist, setShowChecklist] = useState(false)
+  const [isTransactionPending, setIsTransactionPending] = useState(false)
 
   // API base URL - adjust this to your backend URL
   const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api"
@@ -131,15 +132,38 @@ useEffect(() => {
       const savedId = saved && (saved.id || saved.note?.id)
       const savedTitle = saved && (saved.title || saved.note?.title) || title.trim()
 
-      // Record transaction for note operation
+      // Send real blockchain transaction for note operation
+      // Note: Transaction is sent asynchronously and won't block note save
       if (!noteId) {
         // New note created
         if (savedId) {
+          setIsTransactionPending(true);
           recordNoteCreate(savedId, savedTitle)
+            .then(() => {
+              setIsTransactionPending(false);
+            })
+            .catch(err => {
+              setIsTransactionPending(false);
+              // Transaction failed, but note was saved
+              console.error('Note saved but transaction failed:', err);
+              // Show error to user
+              setError(`Note saved successfully, but blockchain transaction failed: ${err.message || err.toString()}. Please check your wallet connection and try again.`);
+            });
         }
       } else {
         // Existing note updated
+        setIsTransactionPending(true);
         recordNoteUpdate(noteId, savedTitle)
+          .then(() => {
+            setIsTransactionPending(false);
+          })
+          .catch(err => {
+            setIsTransactionPending(false);
+            // Transaction failed, but note was updated
+            console.error('Note updated but transaction failed:', err);
+            // Show error to user
+            setError(`Note updated successfully, but blockchain transaction failed: ${err.message || err.toString()}. Please check your wallet connection and try again.`);
+          });
       }
 
       // Success
@@ -249,12 +273,18 @@ useEffect(() => {
               className="ml-2"
               disabled={
                 loading ||
+                isTransactionPending ||
                 !title.trim() ||
                 (!content.trim() && (!Array.isArray(todos) || todos.length === 0))
               }
             >
               {loading ? (
                 <>Saving...</>
+              ) : isTransactionPending ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Processing Transaction...
+                </>
               ) : (
                 <>
                   <Save className="h-4 w-4 mr-2" />
@@ -265,6 +295,16 @@ useEffect(() => {
           </div>
         </div>
       </header>
+
+      {/* Transaction Pending Indicator */}
+      {isTransactionPending && (
+        <div className="mx-auto max-w-4xl p-4">
+          <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 rounded-md p-3 flex items-center gap-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
+            <span>Note saved! Waiting for blockchain transaction to complete. Please approve in your wallet.</span>
+          </div>
+        </div>
+      )}
 
       {/* Error Display */}
       {error && (

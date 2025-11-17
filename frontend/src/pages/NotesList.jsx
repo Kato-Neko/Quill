@@ -53,8 +53,9 @@ export default function NotesList() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [noteToDelete, setNoteToDelete] = useState(null)
   const [walletDialogOpen, setWalletDialogOpen] = useState(false)
+  const [isDeleteTransactionPending, setIsDeleteTransactionPending] = useState(false)
   const navigate = useNavigate()
-  const { address, recordNoteDelete, disconnectWallet, isViewOnly, balance, connectWallet, getAvailableWallets } = useWallet()
+  const { address, recordNoteDelete, disconnectWallet, isViewOnly, balance, connectWallet, getAvailableWallets, refreshBalance, network, setNetwork } = useWallet()
 
   // Debounce search function
   useEffect(() => {
@@ -134,9 +135,7 @@ export default function NotesList() {
       const note = allNotes.find(n => n.id === noteToDelete.toString())
       const noteTitle = note?.title || "Untitled Note"
       
-      // Record transaction before deleting
-      recordNoteDelete(noteToDelete, noteTitle)
-      
+      // Delete note first
       const response = await fetch(`${API_BASE_URL}/notes/${noteToDelete}`, {
         method: 'DELETE'
       })
@@ -145,10 +144,25 @@ export default function NotesList() {
         throw new Error('Failed to delete note')
       }
 
-      // Refresh the notes list
+      // Refresh the notes list immediately (note is already deleted from backend)
       fetchNotes()
       setDeleteDialogOpen(false)
       setNoteToDelete(null)
+
+      // Send real blockchain transaction after successful deletion
+      // Note: Transaction is sent asynchronously and won't block note deletion
+      setIsDeleteTransactionPending(true);
+      recordNoteDelete(noteToDelete, noteTitle)
+        .then(() => {
+          setIsDeleteTransactionPending(false);
+        })
+        .catch(err => {
+          setIsDeleteTransactionPending(false);
+          // Transaction failed, but note was deleted
+          console.error('Note deleted but transaction failed:', err);
+          // Show error to user
+          setError(`Note deleted successfully, but blockchain transaction failed: ${err.message || err.toString()}. Please check your wallet connection and try again.`);
+        });
     } catch (err) {
       setError(err.message)
       console.error('Error deleting note:', err)
@@ -473,6 +487,14 @@ export default function NotesList() {
             )}
           </div>
         </header>
+
+        {/* Transaction Pending Indicator */}
+        {isDeleteTransactionPending && (
+          <div className="p-4 bg-yellow-500/10 border-b border-yellow-500/30 text-yellow-600 text-sm flex items-center gap-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
+            <span>Note deleted! Waiting for blockchain transaction to complete. Please approve in your wallet.</span>
+          </div>
+        )}
 
         {/* Error Display */}
         {error && (

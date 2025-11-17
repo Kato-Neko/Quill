@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select"
-import { ArrowUpRight, ArrowDownLeft, FileText, Calendar, Search, ExternalLink, Plus, Save, X, Info } from "lucide-react"
+import { ArrowUpRight, ArrowDownLeft, FileText, Calendar, Search, ExternalLink, Plus, Save, X, Info, RefreshCw } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -31,10 +31,11 @@ const TRANSACTION_CATEGORIES = [
 ]
 
 export default function TransactionLedger() {
-  const { address, transactions, balance } = useWallet()
+  const { address, transactions, balance, refreshBalance, network, setNetwork, deleteTransaction } = useWallet()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [feeDialogOpen, setFeeDialogOpen] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   // Don't show if wallet is not connected
   if (!address) {
@@ -44,18 +45,18 @@ export default function TransactionLedger() {
   const feeInfo = {
     note_create: {
       operation: "Create Note",
-      fee: "0.10 ADA",
-      description: "A transaction fee is charged each time you create a new note. This fee covers the blockchain transaction costs for storing your note data."
+      fee: "~0.18 ADA",
+      description: "A real blockchain transaction is sent each time you create a new note. This fee covers the Cardano network transaction costs and includes metadata about your note operation."
     },
     note_update: {
       operation: "Update Note",
-      fee: "0.17 ADA",
-      description: "Each time you save changes to an existing note, a transaction fee is charged. This includes auto-saves that occur after 5 seconds of inactivity."
+      fee: "~0.18 ADA",
+      description: "Each time you save changes to an existing note, a real blockchain transaction is sent. This includes auto-saves that occur after 5 seconds of inactivity. The transaction includes metadata about the update."
     },
     note_delete: {
       operation: "Delete Note",
-      fee: "0.12 ADA",
-      description: "When you delete a note, a transaction fee is charged to process the deletion on the blockchain."
+      fee: "~0.18 ADA",
+      description: "When you delete a note, a real blockchain transaction is sent to record the deletion on the Cardano blockchain. The transaction includes metadata about the deleted note."
     }
   }
 
@@ -102,13 +103,13 @@ export default function TransactionLedger() {
 
   const totalReceived = useMemo(() => {
     return filteredTransactions
-      .filter(tx => tx.type === 'received')
+      .filter(tx => tx.type === 'received' && tx.status !== 'failed')
       .reduce((sum, tx) => sum + parseFloat(tx.amount), 0)
   }, [filteredTransactions])
 
   const totalSent = useMemo(() => {
     return filteredTransactions
-      .filter(tx => tx.type === 'sent')
+      .filter(tx => tx.type === 'sent' && tx.status !== 'failed')
       .reduce((sum, tx) => sum + parseFloat(tx.amount), 0)
   }, [filteredTransactions])
 
@@ -119,7 +120,40 @@ export default function TransactionLedger() {
   return (
     <div className="w-full">
       <div className="mb-4">
-        <h2 className="text-lg font-bold mb-2">Transaction Ledger</h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-bold">Transaction Ledger</h2>
+          <div className="flex items-center gap-2">
+            <Select value={network} onValueChange={setNetwork}>
+              <SelectTrigger className="w-[140px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="preview">Preview Testnet</SelectItem>
+                <SelectItem value="preprod">Preprod Testnet</SelectItem>
+                <SelectItem value="mainnet">Mainnet</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                setIsRefreshing(true);
+                try {
+                  await refreshBalance();
+                } catch (error) {
+                  console.error('Failed to refresh balance:', error);
+                } finally {
+                  setIsRefreshing(false);
+                }
+              }}
+              disabled={isRefreshing}
+              className="h-8"
+              title="Refresh balance"
+            >
+              <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        </div>
         <p className="text-xs text-muted-foreground mb-4">
           All transactions are automatically recorded when you create, update, or delete notes. Each operation incurs a fee.{" "}
           <button
@@ -252,7 +286,35 @@ export default function TransactionLedger() {
                           <Calendar className="h-3 w-3" />
                           {formatDate(transaction.date || transaction.createdAt)}
                         </div>
-                        {transaction.txHash && (
+                        {transaction.status === 'pending' && (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs bg-yellow-500/10 text-yellow-600 border-yellow-500/20">
+                              Pending
+                            </Badge>
+                            <button
+                              onClick={() => deleteTransaction(transaction.id)}
+                              className="text-xs text-yellow-600 hover:text-yellow-700 hover:underline"
+                              title="Remove pending transaction"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                        {transaction.status === 'failed' && (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs bg-red-500/10 text-red-600 border-red-500/20">
+                              Failed
+                            </Badge>
+                            <button
+                              onClick={() => deleteTransaction(transaction.id)}
+                              className="text-xs text-red-500 hover:text-red-700 hover:underline"
+                              title="Remove failed transaction"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                        {transaction.status === 'confirmed' && transaction.txHash && (
                           <a
                             href={`https://cardanoscan.io/transaction/${transaction.txHash}`}
                             target="_blank"
