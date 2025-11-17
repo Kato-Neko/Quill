@@ -420,7 +420,7 @@ export function WalletProvider({ children }) {
   };
 
   // Send real blockchain transaction for note creation
-  const recordNoteCreate = async (noteId, noteTitle, fee = 0.18) => {
+  const recordNoteCreate = async (noteId, noteTitle, fee = 0.10) => {
     if (!address || !wallet || isViewOnly) {
       console.warn('Wallet not connected or view-only mode. Transaction not sent.');
       return null;
@@ -482,7 +482,7 @@ export function WalletProvider({ children }) {
   };
 
   // Send real blockchain transaction for note update
-  const recordNoteUpdate = async (noteId, noteTitle, fee = 0.18) => {
+  const recordNoteUpdate = async (noteId, noteTitle, fee = 0.17) => {
     if (!address || !wallet || isViewOnly) {
       console.warn('Wallet not connected or view-only mode. Transaction not sent.');
       return null;
@@ -544,7 +544,7 @@ export function WalletProvider({ children }) {
   };
 
   // Send real blockchain transaction for note deletion
-  const recordNoteDelete = async (noteId, noteTitle, fee = 0.18) => {
+  const recordNoteDelete = async (noteId, noteTitle, fee = 0.12) => {
     if (!address || !wallet || isViewOnly) {
       console.warn('Wallet not connected or view-only mode. Transaction not sent.');
       return null;

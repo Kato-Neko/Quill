@@ -178,7 +178,7 @@ export const buildAndSendNoteOperationTransaction = async ({
     if (error.message?.includes('User rejected') || error.message?.includes('rejected')) {
       throw new Error('Transaction was rejected by wallet');
     } else if (error.message?.includes('insufficient') || error.message?.includes('balance')) {
-      throw new Error('Insufficient balance for transaction. You need at least 1.18 ADA (1 ADA + ~0.18 ADA fee).');
+      throw new Error('Insufficient balance for transaction. You need at least 1.10 ADA (1 ADA + transaction fee).');
     } else if (error.message?.includes('network') || error.message?.includes('Network')) {
       throw new Error('Network mismatch - ensure wallet and app are on the same network (Preview Testnet)');
     } else if (error.message?.includes('UTXO') || error.message?.includes('utxo')) {

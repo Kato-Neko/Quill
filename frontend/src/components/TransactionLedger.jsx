@@ -45,17 +45,17 @@ export default function TransactionLedger() {
   const feeInfo = {
     note_create: {
       operation: "Create Note",
-      fee: "~0.18 ADA",
+      fee: "0.10 ADA",
       description: "A real blockchain transaction is sent each time you create a new note. This fee covers the Cardano network transaction costs and includes metadata about your note operation."
     },
     note_update: {
       operation: "Update Note",
-      fee: "~0.18 ADA",
+      fee: "0.17 ADA",
       description: "Each time you save changes to an existing note, a real blockchain transaction is sent. This includes auto-saves that occur after 5 seconds of inactivity. The transaction includes metadata about the update."
     },
     note_delete: {
       operation: "Delete Note",
-      fee: "~0.18 ADA",
+      fee: "0.12 ADA",
       description: "When you delete a note, a real blockchain transaction is sent to record the deletion on the Cardano blockchain. The transaction includes metadata about the deleted note."
     }
   }
