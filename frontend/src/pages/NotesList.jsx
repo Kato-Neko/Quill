@@ -57,14 +57,38 @@ export default function NotesList() {
   const navigate = useNavigate()
   const { address, recordNoteDelete, disconnectWallet, isViewOnly, balance, connectWallet, getAvailableWallets, refreshBalance, network, setNetwork } = useWallet()
 
-  // Debounce search function
+  // Fetch notes only on mount and when category changes (not on search query changes)
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      fetchNotes()
-    }, 300) // 300ms debounce
+    fetchNotes()
+  }, [selectedCategory])
 
-    return () => clearTimeout(timeoutId)
-  }, [searchQuery, selectedCategory])
+  // Filter notes locally based on search query (no API calls)
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      // If search is empty, show all notes filtered by category
+      if (selectedCategory === "All Notes") {
+        setNotes(allNotes)
+      } else {
+        setNotes(allNotes.filter(note => note.category === selectedCategory))
+      }
+    } else {
+      // Filter locally from allNotes
+      const q = searchQuery.trim().toLowerCase()
+      let filtered = allNotes.filter(n => {
+        const inTitle = (n.title || "").toLowerCase().includes(q)
+        const inContent = (n.content || "").toLowerCase().includes(q)
+        const inTodos = Array.isArray(n.todos) && n.todos.some(t => (t.text || "").toLowerCase().includes(q))
+        return inTitle || inContent || inTodos
+      })
+      
+      // Apply category filter if not "All Notes"
+      if (selectedCategory !== "All Notes") {
+        filtered = filtered.filter(n => n.category === selectedCategory)
+      }
+      
+      setNotes(filtered)
+    }
+  }, [searchQuery, allNotes, selectedCategory])
 
   const fetchNotes = async () => {
     setLoading(true)
@@ -94,24 +118,10 @@ export default function NotesList() {
         }) : 'Unknown date'
       }))
       
-      // Store all notes for category filtering
+      // Store all notes for category filtering and local search
       setAllNotes(transformedNotes)
       
-      // Apply search locally across title, content, todos, then category
-      const q = searchQuery.trim().toLowerCase()
-      let filtered = transformedNotes
-      if (q) {
-        filtered = transformedNotes.filter(n => {
-          const inTitle = (n.title || "").toLowerCase().includes(q)
-          const inContent = (n.content || "").toLowerCase().includes(q)
-          const inTodos = Array.isArray(n.todos) && n.todos.some(t => (t.text || "").toLowerCase().includes(q))
-          return inTitle || inContent || inTodos
-        })
-      }
-      if (selectedCategory !== "All Notes") {
-        filtered = filtered.filter(n => n.category === selectedCategory)
-      }
-      setNotes(filtered)
+      // Notes will be filtered by the useEffect hook based on searchQuery and selectedCategory
     } catch (err) {
       setError(err.message)
       console.error('Error fetching notes:', err)
@@ -128,74 +138,34 @@ export default function NotesList() {
   }
 
   const handleDeleteConfirm = async () => {
-    if (!noteToDelete) return
-
+    if (!noteToDelete) return;
+  
+    const note = allNotes.find(n => n.id === noteToDelete);
+    if (!note) return;
+  
+    setIsDeleteTransactionPending(true);
+    setError(null);
+  
     try {
-      // Get note title before deleting for transaction record
-      const note = allNotes.find(n => n.id === noteToDelete.toString())
-      const noteTitle = note?.title || "Untitled Note"
-      const noteCategory = note?.category || 'Uncategorized'
-      const noteCreatedAt =
-        note?.createdAt ||
-        note?.created_at ||
-        note?.createdDate ||
-        note?.created_date ||
-        new Date().toISOString()
-      const noteUpdatedAt =
-        note?.updatedAt ||
-        note?.updated_at ||
-        note?.updatedDate ||
-        note?.updated_date ||
-        new Date().toISOString()
-      const notePinned = typeof note?.isPinned === 'boolean' ? note.isPinned : false
-      const noteStarred = typeof note?.isStarred === 'boolean' ? note.isStarred : 
-                         typeof note?.starred === 'boolean' ? note.starred : false
-      const noteArchived = typeof note?.isArchived === 'boolean' ? note.isArchived :
-                          typeof note?.archived === 'boolean' ? note.archived : false
-      
-      // Delete note first
-      const response = await fetch(`${API_BASE_URL}/notes/${noteToDelete}`, {
-        method: 'DELETE'
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to delete note')
-      }
-
-      // Refresh the notes list immediately (note is already deleted from backend)
-      fetchNotes()
-      setDeleteDialogOpen(false)
-      setNoteToDelete(null)
-
-      // Send real blockchain transaction after successful deletion
-      // Note: Transaction is sent asynchronously and won't block note deletion
-      setIsDeleteTransactionPending(true);
-      recordNoteDelete({
+      // 1. PAY FIRST
+      await recordNoteDelete({
         noteId: noteToDelete,
-        noteTitle,
-        category: noteCategory,
-        createdAt: noteCreatedAt,
-        updatedAt: noteUpdatedAt,
-        isPinned: notePinned,
-        isStarred: noteStarred,
-        isArchived: noteArchived,
-        isDeleted: true,
-      })
-        .then(() => {
-          setIsDeleteTransactionPending(false);
-        })
-        .catch(err => {
-          setIsDeleteTransactionPending(false);
-          // Transaction failed, but note was deleted
-          console.error('Note deleted but transaction failed:', err);
-          // Show error to user
-          setError(`Note deleted successfully, but blockchain transaction failed: ${err.message || err.toString()}. Please check your wallet connection and try again.`);
-        });
+        noteTitle: note.title || "Untitled",
+        category: note.category || "Personal",
+      });
+  
+      // 2. Then delete from backend
+      const res = await fetch(`${API_BASE_URL}/notes/${noteToDelete}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete from server");
+  
+      fetchNotes();
+      setDeleteDialogOpen(false);
     } catch (err) {
-      setError(err.message)
-      console.error('Error deleting note:', err)
+      setError(err.message || "Transaction failed. Note was not deleted.");
+    } finally {
+      setIsDeleteTransactionPending(false);
     }
-  }
+  };
 
   const handlePinToggle = async (noteId) => {
     try {

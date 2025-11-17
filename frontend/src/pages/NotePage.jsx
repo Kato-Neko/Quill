@@ -106,148 +106,79 @@ useEffect(() => {
 
   const handleSave = async (options = { silent: false }) => {
     if (!title.trim()) {
-      setError("Title cannot be empty")
-      return
+      if (!options.silent) setError("Title is required");
+      return;
     }
-
-    // Allow save if either content or checklist has data
-    const hasText = content && content.trim().length > 0
-    const hasTodos = Array.isArray(todos) && todos.length > 0
-    if (!hasText && !hasTodos) {
-      setError("Add text or at least one checklist item")
-      return
+    if (!content.trim() && todos.length === 0) {
+      if (!options.silent) setError("Note cannot be empty");
+      return;
     }
-
-    setLoading(true)
-    setError(null)
-
+  
+    setError(null);
+    setIsTransactionPending(true);
+    if (!options.silent) setLoading(true);
+  
     try {
-      // Prepare payload: include both content and todos when present
-      const noteData = {
-        title: title.trim(),
-        content: hasText ? content.trim() : null,
-        category: category || null,
-        todos: hasTodos ? todos : null
-      }
-
-      // Use single notes endpoint in hybrid model
-      const baseEndpoint = "notes"
-      const url = noteId 
-        ? `${API_BASE_URL}/${baseEndpoint}/${noteId}` 
-        : `${API_BASE_URL}/${baseEndpoint}`
-      
-      const method = noteId ? 'PUT' : 'POST'
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(noteData)
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`)
-      }
-
-      const saved = await response.json().catch(() => null)
-      const savedPayload = saved?.note ? saved.note : saved
-      const savedId = savedPayload && (savedPayload.id || savedPayload.noteId || savedPayload.note_id)
-      const savedTitle = (savedPayload?.title || savedPayload?.noteTitle || savedPayload?.note_title || title).trim()
-      const savedCategory = savedPayload?.category || category
-      const savedCreatedAt =
-        savedPayload?.createdAt ||
-        savedPayload?.created_at ||
-        noteCreatedAt ||
-        new Date().toISOString()
-      const savedUpdatedAt =
-        savedPayload?.updatedAt ||
-        savedPayload?.updated_at ||
-        new Date().toISOString()
-      const savedPinned = typeof savedPayload?.isPinned === 'boolean' ? savedPayload.isPinned : noteIsPinned
-      const savedStarred = typeof savedPayload?.starred === 'boolean' ? savedPayload.starred : 
-                           typeof savedPayload?.isStarred === 'boolean' ? savedPayload.isStarred : noteIsStarred
-      const savedArchived = typeof savedPayload?.archived === 'boolean' ? savedPayload.archived :
-                           typeof savedPayload?.isArchived === 'boolean' ? savedPayload.isArchived : noteIsArchived
-
-      setNoteCreatedAt(savedCreatedAt)
-      setNoteIsPinned(Boolean(savedPinned))
-      setNoteIsStarred(Boolean(savedStarred))
-      setNoteIsArchived(Boolean(savedArchived))
-      setNoteUpdatedAt(savedUpdatedAt)
-      setCategory(savedCategory || category)
-
-      // Send real blockchain transaction for note operation
-      // Note: Transaction is sent asynchronously and won't block note save
+      // 1. PAY FIRST — Blockchain transaction
       if (!noteId) {
-        // New note created
-        if (savedId) {
-          setIsTransactionPending(true);
-          recordNoteCreate({
-            noteId: savedId,
-            noteTitle: savedTitle,
-            category: savedCategory,
-            createdAt: savedCreatedAt,
-            updatedAt: savedUpdatedAt,
-            isPinned: savedPinned,
-            isStarred: savedStarred,
-            isArchived: savedArchived,
-            isDeleted: false,
-          })
-            .then(() => {
-              setIsTransactionPending(false);
-            })
-            .catch(err => {
-              setIsTransactionPending(false);
-              // Transaction failed, but note was saved
-              console.error('Note saved but transaction failed:', err);
-              // Show error to user
-              setError(`Note saved successfully, but blockchain transaction failed: ${err.message || err.toString()}. Please check your wallet connection and try again.`);
-            });
+        // CREATE
+        await recordNoteCreate({
+          noteId: `temp-${Date.now()}`,
+          noteTitle: title.trim(),
+          category: category || "Personal",
+        });
+  
+        // 2. Only after payment → save to backend
+        const res = await fetch(`${API_BASE_URL}/notes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim(),
+            content: content.trim() || null,
+            category: category || "Personal",
+            todos: todos.length > 0 ? todos : null,
+          }),
+        });
+  
+        if (!res.ok) throw new Error("Failed to save note");
+  
+        const data = await res.json();
+        const newId = data.note?.id || data.id;
+  
+        if (options.silent && newId) {
+          navigate(`/note/${newId}`, { replace: true });
+        } else if (!options.silent) {
+          navigate("/");
         }
       } else {
-        // Existing note updated
-        setIsTransactionPending(true);
-        recordNoteUpdate({
+        // UPDATE
+        await recordNoteUpdate({
           noteId,
-          noteTitle: savedTitle,
-          category: savedCategory,
-          createdAt: savedCreatedAt,
-          updatedAt: savedUpdatedAt,
-          isPinned: savedPinned,
-          isStarred: savedStarred,
-          isArchived: savedArchived,
-          isDeleted: false,
-        })
-          .then(() => {
-            setIsTransactionPending(false);
-          })
-          .catch(err => {
-            setIsTransactionPending(false);
-            // Transaction failed, but note was updated
-            console.error('Note updated but transaction failed:', err);
-            // Show error to user
-            setError(`Note updated successfully, but blockchain transaction failed: ${err.message || err.toString()}. Please check your wallet connection and try again.`);
-          });
-      }
-
-      // Success
-      if (options.silent) {
-        // If we created a new note silently, redirect to its edit page for subsequent auto-saves
-        if (!noteId && savedId) {
-          navigate(`/note/${savedId}`, { replace: true })
-        }
-      } else {
-        navigate("/")
+          noteTitle: title.trim(),
+          category: category || "Personal",
+        });
+  
+        const res = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim(),
+            content: content.trim() || null,
+            category: category || "Personal",
+            todos: todos.length > 0 ? todos : null,
+          }),
+        });
+  
+        if (!res.ok) throw new Error("Failed to update note");
+        if (!options.silent) navigate("/");
       }
     } catch (err) {
-      setError(err.message)
-      console.error('Error saving note:', err)
+      setError(err.message || "Transaction failed. Note was not saved.");
     } finally {
-      setLoading(false)
+      setIsTransactionPending(false);
+      if (!options.silent) setLoading(false);
     }
-  }
+  };
 
   const handleDeleteClick = () => {
     if (!noteId) return
@@ -259,8 +190,9 @@ useEffect(() => {
 
     try {
       setLoading(true)
+      setIsTransactionPending(true)
       
-      // Record transaction before deleting (capture metadata now)
+      // STEP 1: Send blockchain transaction FIRST (before deleting from backend)
       const noteTitle = title.trim() || "Untitled Note"
       const deleteMetadata = {
         noteId,
@@ -273,23 +205,31 @@ useEffect(() => {
         isArchived: noteIsArchived,
         isDeleted: true,
       }
-      recordNoteDelete(deleteMetadata).catch(err => {
-        console.error('Blockchain delete transaction failed:', err)
-        setError(`Note delete recorded locally, but blockchain transaction failed: ${err.message || err.toString()}`)
-      })
       
-      // Use single notes endpoint in hybrid model
-      const baseEndpoint = "notes"
-      const response = await fetch(`${API_BASE_URL}/${baseEndpoint}/${noteId}`, {
-        method: 'DELETE'
-      })
+      try {
+        // Send transaction FIRST - wait for success
+        await recordNoteDelete(deleteMetadata)
+        
+        // Transaction succeeded - now delete from backend
+        const baseEndpoint = "notes"
+        const response = await fetch(`${API_BASE_URL}/${baseEndpoint}/${noteId}`, {
+          method: 'DELETE'
+        })
 
-      if (!response.ok) {
-        throw new Error('Failed to delete note')
+        if (!response.ok) {
+          throw new Error('Failed to delete note from backend')
+        }
+
+        setIsTransactionPending(false)
+        // Success - navigate back to notes list only after transaction AND backend delete succeeded
+        navigate("/")
+      } catch (err) {
+        setIsTransactionPending(false)
+        // Transaction or backend operation failed
+        console.error('Delete operation failed:', err)
+        setError(`Delete failed: ${err.message || err.toString()}. The note will not be deleted. Please check your wallet connection and try again.`)
+        // Don't navigate - operation failed
       }
-
-      // Success - navigate back to notes list
-      navigate("/")
     } catch (err) {
       setError(err.message)
       console.error('Error deleting note:', err)
