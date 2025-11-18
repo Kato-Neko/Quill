@@ -580,17 +580,23 @@ const recordNoteCreate = async ({
       throw new Error('Transaction was not signed or failed to submit.');
     }
 
-    addTransaction({
+    const ledgerEntry = addTransaction({
       type: 'sent',
-      amount: fee,
+      amount: null, // Initially null - will be updated with actual fee from blockchain
       category: 'Expense',
-      note: `Created note: "${noteTitle}"`,
+      note: `Note created: "${noteTitle}" (${metadata.category})`,
       operation: 'note_create',
       noteId: noteId.toString(),
       noteTitle,
       status: 'confirmed',
       txHash,
       network,
+      feeSource: 'estimated',
+    });
+    
+    // Update with actual fee from blockchain
+    updateTransactionWithActualFee(ledgerEntry.id, txHash, network).catch((err) => {
+      console.error('Failed to update ledger with actual fee (create):', err);
     });
 
     await refreshBalance();
@@ -647,17 +653,23 @@ const recordNoteUpdate = async ({
       throw new Error('Update transaction was not signed or failed to submit.');
     }
 
-    addTransaction({
+    const ledgerEntry = addTransaction({
       type: 'sent',
-      amount: fee,
+      amount: null, // Initially null - will be updated with actual fee from blockchain
       category: 'Expense',
-      note: `Updated note: "${noteTitle}"`,
+      note: `Note updated: "${noteTitle}" (${metadata.category})`,
       operation: 'note_update',
       noteId: noteId.toString(),
       noteTitle,
       status: 'confirmed',
       txHash,
       network,
+      feeSource: 'estimated',
+    });
+    
+    // Update with actual fee from blockchain
+    updateTransactionWithActualFee(ledgerEntry.id, txHash, network).catch((err) => {
+      console.error('Failed to update ledger with actual fee (update):', err);
     });
 
     await refreshBalance();
@@ -716,17 +728,23 @@ const recordNoteDelete = async ({
       throw new Error('Delete transaction was not signed or failed to submit.');
     }
 
-    addTransaction({
+    const ledgerEntry = addTransaction({
       type: 'sent',
-      amount: fee,
+      amount: null, // Initially null - will be updated with actual fee from blockchain
       category: 'Expense',
-      note: `Deleted note: "${noteTitle}"`,
+      note: `Note deleted: "${noteTitle}" (${metadata.category})`,
       operation: 'note_delete',
       noteId: noteId.toString(),
       noteTitle,
       status: 'confirmed',
       txHash,
       network,
+      feeSource: 'estimated',
+    });
+    
+    // Update with actual fee from blockchain
+    updateTransactionWithActualFee(ledgerEntry.id, txHash, network).catch((err) => {
+      console.error('Failed to update ledger with actual fee (delete):', err);
     });
 
     await refreshBalance();

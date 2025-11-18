@@ -45,17 +45,14 @@ export default function TransactionLedger() {
   const feeInfo = {
     note_create: {
       operation: "Create Note",
-      fee: "0.10 ADA",
       description: "A real blockchain transaction is sent each time you create a new note. This fee covers the Cardano network transaction costs and includes metadata about your note operation."
     },
     note_update: {
       operation: "Update Note",
-      fee: "0.17 ADA",
       description: "Each time you save changes to an existing note, a real blockchain transaction is sent. This includes auto-saves that occur after 5 seconds of inactivity. The transaction includes metadata about the update."
     },
     note_delete: {
       operation: "Delete Note",
-      fee: "0.12 ADA",
       description: "When you delete a note, a real blockchain transaction is sent to record the deletion on the Cardano blockchain. The transaction includes metadata about the deleted note."
     }
   }
@@ -76,7 +73,7 @@ export default function TransactionLedger() {
         tx.recipientAddress?.toLowerCase().includes(query) ||
         tx.senderAddress?.toLowerCase().includes(query) ||
         tx.txHash?.toLowerCase().includes(query) ||
-        tx.amount.toString().includes(query) ||
+        (tx.amount !== null && tx.amount !== undefined && tx.amount.toString().includes(query)) ||
         tx.operation?.toLowerCase().includes(query)
       )
     }
@@ -356,22 +353,19 @@ export default function TransactionLedger() {
           <DialogHeader>
             <DialogTitle>Transaction Fees</DialogTitle>
             <DialogDescription>
-              Transparent fee structure for all note operations
+              How transaction fees work for note operations
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             {Object.entries(feeInfo).map(([key, info]) => (
               <div key={key} className="border rounded-lg p-4">
-                <div className="flex items-start justify-between mb-2">
+                <div className="flex items-start mb-2">
                   <div className="flex items-center gap-2">
                     {key === 'note_create' && <Plus className="h-4 w-4 text-muted-foreground" />}
                     {key === 'note_update' && <Save className="h-4 w-4 text-muted-foreground" />}
                     {key === 'note_delete' && <X className="h-4 w-4 text-muted-foreground" />}
                     <h3 className="font-semibold text-sm">{info.operation}</h3>
                   </div>
-                  <Badge variant="outline" className="font-mono">
-                    {info.fee}
-                  </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
                   {info.description}
@@ -380,8 +374,9 @@ export default function TransactionLedger() {
             ))}
             <div className="mt-4 p-3 bg-muted/50 rounded-lg">
               <p className="text-xs text-muted-foreground">
-                <strong>Note:</strong> All fees are automatically recorded in your transaction ledger. 
-                These fees are standard Cardano network transaction costs required to process operations on the blockchain.
+                <strong>Note:</strong> Transaction fees are determined by the Cardano network and vary based on network conditions. 
+                Fees are automatically fetched from the blockchain and recorded in your transaction ledger once the transaction is confirmed. 
+                While fees are pending, transactions will show "Fee pending..." in the ledger.
               </p>
             </div>
           </div>
