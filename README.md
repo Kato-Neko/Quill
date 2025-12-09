@@ -1,57 +1,51 @@
-# Quill - Notes Application
+# Quill - Notes dApp (Cardano)
 
-A modern, full-stack notes application built with React, Spring Boot, and MySQL. Create, edit, search, and organize your notes with a clean, intuitive interface.
+A full-stack notes app with on-chain recording of note actions. The frontend is React (Vite) with Mesh SDK + Koios for Cardano transactions; the backend is Spring Boot + MySQL for fast local caching of notes and transaction metadata. Wallet connection acts as authentication (no username/password).
 
 ## 🚀 Tech Stack
 
 ### Frontend
-- **React** with Vite
-- **Tailwind CSS** for styling
-- **shadcn/ui** for UI components
-- **React Router** for navigation
+- React (Vite), Tailwind, shadcn/ui, React Router
+- Mesh SDK (@meshsdk/core) for building/signing/submitting Cardano txs
+- Koios (via backend proxy) for balance/tx info; Blockfrost is optional
 
 ### Backend
-- **Spring Boot** (Java)
-- **Spring Data JPA** for database operations
-- **MySQL** database
-- **Maven** for dependency management
+- Spring Boot (Java), Spring Data JPA, MySQL
+- Exposes REST for notes + blockchain transaction records
+- Koios proxy endpoints for tx/balance/address history
 
-### Development Tools
-- **Git** for version control
-- **Postman** for API testing
-- **Trello** for project management
+### Authentication
+- Wallet integration only (no login/signup). Connecting a Cardano wallet (e.g., Lace) is the auth gate.
 
-## 📁 Project Structure
+## 📁 Project Structure (high level)
 
 ```
 quill/
-├── frontend/                 # React application
-│   ├── src/
-│   │   ├── components/      # Reusable UI components
-│   │   ├── pages/          # Page components
-│   │   ├── services/       # API service calls
-│   │   └── styles/         # CSS and styling
-│   ├── public/
-│   └── package.json
-├── backend/                  # Spring Boot application
-│   ├── src/main/java/
-│   │   ├── controller/     # REST controllers
-│   │   ├── entity/         # JPA entities
-│   │   ├── repository/     # Data repositories
-│   │   └── service/        # Business logic
-│   ├── src/main/resources/
-│   └── pom.xml
+├── frontend/                    # React app (Mesh SDK + Koios)
+│   └── src/
+│       ├── contexts/WalletContext.jsx  # wallet, tx building, polling
+│       ├── lib/transactionBuilder.js   # Mesh tx build/sign/submit + metadata
+│       ├── components/TransactionLedger.jsx
+│       └── pages/NotePage.jsx
+├── backend/                     # Spring Boot app
+│   └── src/main/java/com/hexagram/quill
+│       ├── controller/NoteController.java
+│       ├── controller/BlockchainTransactionController.java
+│       ├── controller/KoiosProxyController.java
+│       ├── entity/Note.java
+│       ├── entity/BlockchainTransaction.java
+│       └── service/NoteService.java
 └── README.md
 ```
 
 ## 🛠️ Setup Instructions
 
 ### Prerequisites
-- **Node.js** (v16 or higher)
-- **Java** (JDK 11 or higher)
-- **Maven** (v3.6 or higher)
-- **MySQL** (v8.0 or higher)
-- **Git**
+- Node.js 18+
+- Java 17+ (Spring Boot)
+- Maven 3.6+
+- MySQL 8+
+- Git
 
 ### 1. Clone the Repository
 ```bash
@@ -74,107 +68,66 @@ FLUSH PRIVILEGES;
 
 ### 3. Backend Setup
 ```bash
-cd backend
+cd backend/quill
 ```
-
-1. Configure database connection in `src/main/resources/application.properties`:
+Configure `src/main/resources/application.properties`:
 ```properties
-# Database Configuration
 spring.datasource.url=jdbc:mysql://localhost:3306/notes_db
 spring.datasource.username=root
 spring.datasource.password=your_password
-spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
-
-# JPA Configuration
-spring.jpa.hibernate.ddl-auto=create-drop
+spring.jpa.hibernate.ddl-auto=update
 spring.jpa.show-sql=true
-spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQL8Dialect
-
-# Server Configuration
 server.port=8080
 ```
-
-2. Install dependencies and run:
+Run:
 ```bash
 mvn clean install
 mvn spring-boot:run
 ```
-
-The backend server will start on `http://localhost:8080`
+Backend: `http://localhost:8080`
 
 ### 4. Frontend Setup
 ```bash
 cd frontend
-```
-
-1. Install dependencies:
-```bash
 npm install
-```
-
-2. Start the development server:
-```bash
 npm run dev
 ```
+Frontend: `http://localhost:5173`
 
-The frontend will start on `http://localhost:5173`
+Environment (frontend):
+- `VITE_API_URL=http://localhost:8080/api` (default fallback)
 
-## 🔌 API Endpoints
+Environment (Koios proxy is built-in backend):
+- No extra keys required for preview/preprod/mainnet public Koios.
+- Blockfrost is optional and not required for current flow.
 
-### Notes Management
-- `GET /api/notes` - Retrieve all notes (with pagination)
-- `POST /api/notes` - Create a new note
-- `GET /api/notes/{id}` - Get a specific note
-- `PUT /api/notes/{id}` - Update a note
-- `DELETE /api/notes/{id}` - Delete a note
-- `GET /api/notes/search?query={searchTerm}` - Search notes
+## 🔌 Key API Endpoints (backend)
 
-### Example API Usage
+- Notes: `GET/POST/PUT/PATCH/DELETE /api/notes`
+- Note status update: `PATCH /api/notes/{id}/status?status=pending|confirmed&txHash=...`
+- Blockchain txs: `GET/POST/PUT/PATCH /api/blockchain-transactions`
+- Koios proxy:
+  - `POST /api/koios/address-info`
+  - `POST /api/koios/address-txs`
+  - `POST /api/koios/tx-info`
 
-#### Create a Note
-```bash
-curl -X POST http://localhost:8080/api/notes \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "My First Note",
-    "content": "This is the content of my note",
-    "category": "Personal"
-  }'
-```
+## 🧭 Blockchain behavior (what matters)
 
-#### Get All Notes
-```bash
-curl http://localhost:8080/api/notes
-```
-
-#### Search Notes
-```bash
-curl "http://localhost:8080/api/notes/search?query=meeting"
-```
+- Wallet-only auth; no login/signup.
+- On create/update/delete, frontend builds/signs/submits a real Cardano tx via Mesh SDK; includes metadata labels 674 and 1337 with note details and chunked content (64-byte safe).
+- Notes are saved locally with `status: pending`, `txHash`, `walletAddress`, `network` so the UI is instant while chain confirms.
+- Client background poll (every ~20s) uses Koios `tx_info` via backend proxy to flip pending → confirmed and backfill fee; confirmed txs are stored in `blockchain_transactions`.
+- Transaction Ledger UI shows pending and “Fee pending…” until the fee is fetched; links to Cardanoscan per network.
+- Blockfrost is optional; current implementation uses Koios. Blaze is not used—Mesh SDK is the tx builder.
 
 ## 🧪 Testing
-
-### Backend Testing
-```bash
-cd backend
-mvn test
-```
-
-### Frontend Testing
-```bash
-cd frontend
-npm run test
-```
-
-### API Testing with Postman
-1. Import the provided Postman collection (if available)
-2. Test all CRUD operations
-3. Verify search functionality
-4. Test error handling scenarios
+- Backend: `cd backend/quill && mvn test`
+- Frontend: `cd frontend && npm run test`
+- Manual: use a Cardano wallet (e.g., Lace) on Preview and perform note create/update/delete; watch Transaction Ledger for pending → confirmed and fee backfill.
 
 ## 👥 Development Team
 
-- **Nick Carter Lacanglacang** - Project Lead & Setup
+- **Nick Carter Lacanglacang** - Project Lead & Full-Stack Developer
 - **Franco Magno** - Database Lead & Integration
 - **Rigel Baltazar** - Backend Developer
 - **Joshua Pusing** - Backend Developer
@@ -188,45 +141,19 @@ npm run test
 - Configure .gitignore for node_modules + target
 - Set up shared README.md (project instructions)
 
-### Phase 2: Core Development 🔄
-#### Frontend
-- Initialize frontend boilerplate
-- Create basic routing (NotePage, NotesList)
-- Create Note Page UI (create, edit, delete buttons)
-- Create Results Page UI (list + search)
-
-#### Backend
-- Initialize backend boilerplate
-- Initialize Spring Boot project configuration
-- Create Note entity + repository
-- Implement POST /api/notes
-- Implement GET /api/notes + search functionality
-- Test APIs with Postman
-
-#### Database
-- Create notes_db in MySQL
-- Configure MySQL connection in Spring Boot
-- Verify schema (table auto-created by JPA)
-- Insert sample data manually for testing
-
-### Phase 3: Integration 📋
-- Connect frontend Note Page → POST API
-- Connect Results Page → GET API
-- Verify notes persist in MySQL
-- Test with multiple scenarios
-
-### Phase 4: Testing and Bug Fixes 🐛
-- Comprehensive testing of all features
-- Bug identification and tracking
-- Fix assigned bugs
+### Phase 2+: Core dApp Work (summary)
+- Wallet connect (Mesh) replaces login/signup.
+- Cardano tx integration for note create/update/delete with metadata + chunking.
+- Pending/confirmed status model with local DB caching; tx ledger UI.
+- Koios proxy + client polling for confirmations and fee backfill.
 
 ## 🚀 Features
 
-- ✅ **Create Notes** - Add new notes with title, content, and categories
-- ✅ **View Notes** - Browse all notes in a clean, organized interface
-- ✅ **Search Notes** - Find notes quickly using search functionality
-- ✅ **Edit Notes** - Update existing notes seamlessly
-- ✅ **Delete Notes** - Remove notes you no longer need
+- ✅ Create/Update/Delete notes with Cardano transactions and on-chain metadata
+- ✅ Wallet-only auth (no login/signup)
+- ✅ Pending/confirmed status with fast local cache (MySQL)
+- ✅ Transaction Ledger with fee backfill and explorer links
+- ✅ Search, archive, pin, star, delete, restore
 
 
 ## 📝 Git Workflow - IMPORTANT!
@@ -315,7 +242,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 If you encounter any issues or have questions:
 - Check the troubleshooting section above
 - Create an issue in the GitHub repository
-- Contact the development team
+- Contact the development team. Send an email to nickcarter.lacang@gmail.com.
 
 ---
 
