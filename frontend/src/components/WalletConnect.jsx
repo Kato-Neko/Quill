@@ -82,13 +82,33 @@ export default function WalletConnect() {
             </DialogHeader>
             
             {!showManualInput ? (
-              <div className="space-y-2">
+              <div className="space-y-2 wallet-list-group">
                 {getAvailableWallets().map((wallet) => (
                   <Button
                     key={wallet.name}
                     variant="outline"
-                    className="w-full justify-start"
+                    className="w-full justify-start wallet-item transition-all duration-300 relative hover:z-20 hover:scale-[1.03] hover:shadow-xl"
                     onClick={() => handleWalletSelect(wallet.name)}
+                    onMouseEnter={(e) => {
+                      const list = e.currentTarget.closest('.wallet-list-group');
+                      if (list) {
+                        Array.from(list.children).forEach((child) => {
+                          if (child !== e.currentTarget) {
+                            child.classList.add('blur-sm');
+                          } else {
+                            child.classList.remove('blur-sm');
+                          }
+                        });
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      const list = e.currentTarget.closest('.wallet-list-group');
+                      if (list) {
+                        Array.from(list.children).forEach((child) => {
+                          child.classList.remove('blur-sm');
+                        });
+                      }
+                    }}
                   >
                     <Wallet className="mr-2" size={18} />
                     {wallet.name}
@@ -96,8 +116,28 @@ export default function WalletConnect() {
                 ))}
                 <Button
                   variant="ghost"
-                  className="w-full justify-start"
+                  className="w-full justify-start wallet-item transition-all duration-300 relative hover:z-20 hover:scale-[1.03] hover:shadow-xl"
                   onClick={() => setShowManualInput(true)}
+                  onMouseEnter={(e) => {
+                    const list = e.currentTarget.closest('.wallet-list-group');
+                    if (list) {
+                      Array.from(list.children).forEach((child) => {
+                        if (child !== e.currentTarget) {
+                          child.classList.add('blur-sm');
+                        } else {
+                          child.classList.remove('blur-sm');
+                        }
+                      });
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    const list = e.currentTarget.closest('.wallet-list-group');
+                    if (list) {
+                      Array.from(list.children).forEach((child) => {
+                        child.classList.remove('blur-sm');
+                      });
+                    }
+                  }}
                 >
                   <Plus className="mr-2" size={18} />
                   Enter address manually (view-only)

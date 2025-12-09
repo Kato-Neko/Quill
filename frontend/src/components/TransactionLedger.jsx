@@ -93,11 +93,31 @@ export default function TransactionLedger() {
     })
   }
 
+  const formatDateMinimal = (dateString) => {
+    if (!dateString) return ''
+    const date = new Date(dateString)
+    const month = date.toLocaleDateString('en-US', { month: 'short' })
+    const day = date.getDate()
+    const year = date.getFullYear()
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${month} ${day} ${year} ${hours}:${minutes}`
+  }
+
   const formatAmount = (amount) => {
     if (amount === null || amount === undefined) {
       return 'Fee pending'
     }
     return parseFloat(amount).toFixed(6)
+  }
+
+  const cleanNoteText = (note) => {
+    if (!note) return null
+    // Remove redundant prefixes like "Note created:", "Note updated:", "Note deleted:", "Created note:", "Updated note:"
+    return note
+      .replace(/^(Note\s+(created|updated|deleted):\s*)/i, '')
+      .replace(/^((Created|Updated|Deleted)\s+note:\s*)/i, '')
+      .trim()
   }
 
 
@@ -126,9 +146,22 @@ export default function TransactionLedger() {
 
   return (
     <div className="w-full">
-      <div className="mb-4">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-bold">Transaction Ledger</h2>
+      <div className="mb-3">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+          <div>
+            <h2 className="text-xl font-bold mb-1">Transaction Ledger</h2>
+            <p className="text-xs text-muted-foreground">
+              All transactions are automatically recorded when you create, update, or delete notes.{" "}
+              <button
+                onClick={() => setFeeDialogOpen(true)}
+                className="text-primary hover:underline inline-flex items-center gap-1"
+              >
+                Learn more
+                <Info className="h-3 w-3" />
+              </button>
+            </p>
+          </div>
           <div className="flex items-center gap-2">
             <Select value={network} onValueChange={setNetwork}>
               <SelectTrigger className="w-[140px] h-8 text-xs">
@@ -161,50 +194,42 @@ export default function TransactionLedger() {
             </Button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground mb-4">
-          All transactions are automatically recorded when you create, update, or delete notes. Each operation incurs a fee.{" "}
-          <button
-            onClick={() => setFeeDialogOpen(true)}
-            className="text-primary hover:underline inline-flex ml-1 items-center gap-1"
-          >
-            Learn more
-            <Info className="h-3 w-3" />
-          </button>
-        </p>
         
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-          <Card>
-            <CardContent className="p-3">
-              <div className="text-xs text-muted-foreground mb-1">Recorded Sent</div>
-              <div className="text-lg font-bold text-red-600">-{formatAmount(totalSent)} ADA</div>
-              <div className="text-[10px] text-muted-foreground mt-1">From recorded transactions</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+          <Card className="hover:shadow-sm transition-shadow">
+            <CardContent className="p-2.5">
+              <div className="text-xs text-muted-foreground mb-0.5">Recorded Sent</div>
+              <div className="text-lg font-semibold">
+                -{formatAmount(totalSent)} <span className="text-sm font-normal text-muted-foreground">ADA</span>
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">From recorded transactions</div>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="p-3">
-              <div className="text-xs text-muted-foreground mb-1">Wallet Balance</div>
-              <div className={`text-lg font-bold ${netBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {netBalance >= 0 ? '+' : ''}{formatAmount(netBalance)} ADA
+          <Card className="hover:shadow-sm transition-shadow">
+            <CardContent className="p-2.5">
+              <div className="text-xs text-muted-foreground mb-0.5">Wallet Balance</div>
+              <div className="text-lg font-semibold">
+                {netBalance >= 0 ? '+' : ''}{formatAmount(netBalance)} <span className="text-sm font-normal text-muted-foreground">ADA</span>
               </div>
-              <div className="text-[10px] text-muted-foreground mt-1">Total ADA in wallet</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">Total ADA in wallet</div>
             </CardContent>
           </Card>
         </div>
 
         {/* Filters */}
-        <div className="flex gap-3 mb-3">
+        <div className="flex gap-2 mb-2">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-muted-foreground h-3.5 w-3.5" />
             <Input
               placeholder="Search transactions..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 h-9"
+              className="pl-8 h-8 text-xs"
             />
           </div>
           <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="w-[160px] h-9">
+            <SelectTrigger className="w-[140px] h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -220,123 +245,129 @@ export default function TransactionLedger() {
 
       {/* Transaction List */}
       {filteredTransactions.length === 0 ? (
-        <div className="text-center py-8">
-          <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-          <h3 className="text-base font-medium mb-1">No transactions found</h3>
-          <p className="text-sm text-muted-foreground">
-            {transactions.length === 0 
-              ? "Transactions are automatically recorded when you create, update, or delete notes."
-              : "Try adjusting your filters."}
-          </p>
-        </div>
+        <Card className="border-dashed">
+          <CardContent className="p-12">
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+                <FileText className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">No transactions found</h3>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                {transactions.length === 0 
+                  ? "Transactions are automatically recorded when you create, update, or delete notes. Your transaction history will appear here."
+                  : "No transactions match your current filters. Try adjusting your search or category filter."}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1.5 group/list">
           {filteredTransactions.map((transaction) => {
             const isOutgoing = transaction.type === 'sent'
             const isIncoming = transaction.type === 'received'
+            const hasAmount = transaction.amount !== null && transaction.amount !== undefined
+            const txUrl = transaction.txHash ? getCardanoscanTxUrl(transaction.txHash, transaction.network) : null
 
             return (
-              <Card key={transaction.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        {isOutgoing ? (
-                          <ArrowUpRight className="h-4 w-4 text-red-500" />
-                        ) : isIncoming ? (
-                          <ArrowDownLeft className="h-4 w-4 text-green-500" />
+              <Card 
+                key={transaction.id} 
+                className="group/item transition-all duration-300 relative hover:z-20 group/list:hover:blur-sm group-hover/item:blur-none group-hover/item:scale-[1.03] group-hover/item:shadow-xl"
+              >
+                <CardContent className="px-10 py-2">
+                  <div className="grid grid-cols-1 md:grid-cols-[auto_auto_1fr_auto] gap-2 md:gap-3 items-center">
+                    {/* Column 1: Transaction Hash (as link) */}
+                    <div className="min-w-[100px] order-1 md:order-1">
+                      {transaction.txHash ? (
+                        txUrl ? (
+                          <a
+                            href={txUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-mono text-foreground hover:text-primary hover:underline break-all inline-block"
+                          >
+                            {transaction.txHash.slice(0, 16)}...
+                          </a>
                         ) : (
-                          <FileText className="h-4 w-4 text-gray-500" />
-                        )}
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold text-base">
-                              {transaction.amount === null || transaction.amount === undefined ? (
-                                <span className="text-xs text-muted-foreground">Fee pending…</span>
-                              ) : (
-                                <>
-                                  {isOutgoing ? '-' : '+'}{formatAmount(transaction.amount)} ADA
-                                </>
-                              )}
-                            </h3>
-                            {transaction.operation && (
-                              <Badge variant="outline" className="text-xs">
-                                {transaction.operation === 'note_create' && <Plus className="h-3 w-3 mr-1" />}
-                                {transaction.operation === 'note_update' && <Save className="h-3 w-3 mr-1" />}
-                                {transaction.operation === 'note_delete' && <X className="h-3 w-3 mr-1" />}
-                                {transaction.operation.replace('note_', '')}
-                              </Badge>
-                            )}
-                          </div>
-                          {transaction.recipientAddress && (
-                            <p className="text-xs text-muted-foreground font-mono">
-                              To: {transaction.recipientAddress.slice(0, 30)}...
-                            </p>
-                          )}
-                          {transaction.senderAddress && (
-                            <p className="text-xs text-muted-foreground font-mono">
-                              From: {transaction.senderAddress.slice(0, 30)}...
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {transaction.note && (
-                        <p className="text-xs text-foreground mb-1">
-                          {transaction.note}
-                        </p>
+                          <span className="text-xs font-mono text-muted-foreground break-all">
+                            {transaction.txHash.slice(0, 16)}...
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No hash</span>
                       )}
+                    </div>
 
-                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {formatDate(transaction.date || transaction.createdAt)}
-                        </div>
-                        {transaction.status === 'pending' && (
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs bg-yellow-500/10 text-yellow-600 border-yellow-500/20">
-                              Pending
-                            </Badge>
-                            <button
-                              onClick={() => deleteTransaction(transaction.id)}
-                              className="text-xs text-yellow-600 hover:text-yellow-700 hover:underline"
-                              title="Remove pending transaction"
-                            >
-                              Remove
-                            </button>
+                    {/* Column 2: Method/Action Badge */}
+                    <div className="flex-shrink-0 order-2 md:order-2 mx-2 md:mx-3 min-w-[90px]">
+                      {transaction.operation ? (
+                        <Badge 
+                          variant="outline" 
+                          className={`text-xs font-normal px-10 py-1.5 border-2 whitespace-nowrap ${
+                            transaction.operation === 'note_create' 
+                              ? 'border-green-500 text-green-700 dark:text-green-400 dark:border-green-400 bg-green-50 dark:bg-green-950/20' 
+                              : transaction.operation === 'note_update'
+                              ? 'border-blue-500 text-blue-700 dark:text-blue-400 dark:border-blue-400 bg-blue-50 dark:bg-blue-950/20'
+                              : 'border-red-500 text-red-700 dark:text-red-400 dark:border-red-400 bg-red-50 dark:bg-red-950/20'
+                          }`}
+                        >
+                          {transaction.operation === 'note_create' && <Plus className="h-3.5 w-3.5 mr-1" />}
+                          {transaction.operation === 'note_update' && <Save className="h-3.5 w-3.5 mr-1" />}
+                          {transaction.operation === 'note_delete' && <X className="h-3.5 w-3.5 mr-1" />}
+                          {transaction.operation.replace('note_', '')}
+                        </Badge>
+                      ) : transaction.status === 'pending' ? (
+                        <Badge variant="outline" className="text-xs font-normal px-10 py-1.5 whitespace-nowrap">
+                          Pending
+                        </Badge>
+                      ) : transaction.status === 'failed' ? (
+                        <Badge variant="outline" className="text-xs font-normal px-10 py-1.5 whitespace-nowrap">
+                          Failed
+                        </Badge>
+                      ) : null}
+                    </div>
+
+                    {/* Column 3: Note Information (Middle) */}
+                    <div className="min-w-0 order-4 md:order-3">
+                      {transaction.note ? (
+                        <p className="text-sm text-foreground line-clamp-1">
+                          {cleanNoteText(transaction.note)}
+                        </p>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No note</span>
+                      )}
+                      {transaction.status === 'pending' && (
+                        <button
+                          onClick={() => deleteTransaction(transaction.id)}
+                          className="text-xs text-muted-foreground hover:underline mt-0.5 block"
+                          title="Remove pending transaction"
+                        >
+                          Remove
+                        </button>
+                      )}
+                      {transaction.status === 'failed' && (
+                        <button
+                          onClick={() => deleteTransaction(transaction.id)}
+                          className="text-xs text-muted-foreground hover:underline mt-0.5 block"
+                          title="Remove failed transaction"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Column 4: Amount (top) and Date/Time (bottom) - Right side */}
+                    <div className="flex-shrink-0 text-right min-w-[160px] order-3 md:order-4">
+                      <div className="mb-0.5">
+                        {!hasAmount ? (
+                          <span className="text-sm text-muted-foreground">Fee pending…</span>
+                        ) : (
+                          <div className="text-xl font-semibold">
+                            {isOutgoing ? '-' : '+'}{formatAmount(transaction.amount)} <span className="text-sm font-normal text-muted-foreground">ADA</span>
                           </div>
                         )}
-                        {transaction.status === 'failed' && (
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs bg-red-500/10 text-red-600 border-red-500/20">
-                              Failed
-                            </Badge>
-                            <button
-                              onClick={() => deleteTransaction(transaction.id)}
-                              className="text-xs text-red-500 hover:text-red-700 hover:underline"
-                              title="Remove failed transaction"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        )}
-                        {transaction.status === 'confirmed' && transaction.txHash && (
-                          (() => {
-                            const url = getCardanoscanTxUrl(transaction.txHash, transaction.network)
-                            if (!url) return null
-                            return (
-                              <a
-                                href={url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-500 hover:underline flex items-center gap-1"
-                              >
-                                <ExternalLink className="h-3 w-3" />
-                                View on Cardanoscan
-                              </a>
-                            )
-                          })()
-                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground font-light leading-tight tracking-tight">
+                        {formatDateMinimal(transaction.date || transaction.createdAt)}
                       </div>
                     </div>
                   </div>
