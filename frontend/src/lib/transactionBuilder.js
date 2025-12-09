@@ -1,29 +1,32 @@
-import { Transaction, KoiosProvider } from '@meshsdk/core';
+import { Transaction, BlockfrostProvider } from '@meshsdk/core';
 
 /**
  * Get the appropriate provider based on network
  * @param {string} network - 'preview', 'preprod', or 'mainnet'
- * @returns {KoiosProvider} Provider instance
+ * @returns {BlockfrostProvider} Provider instance
  */
 export const getProvider = (network = 'preview') => {
-  let providerUrl;
+  // IMPORTANT: Replace with your actual Blockfrost Project ID from https://blockfrost.io/
+  const blockfrostProjectId = 'YOUR_BLOCKFROST_PROJECT_ID';
   
-  switch (network) {
-    case 'preview':
-      providerUrl = 'https://preview.koios.rest/api/v0';
-      break;
-    case 'preprod':
-      providerUrl = 'https://preprod.koios.rest/api/v0';
-      break;
-    case 'mainnet':
-      providerUrl = 'https://api.koios.rest/api/v0';
-      break;
-    default:
-      providerUrl = 'https://preview.koios.rest/api/v0';
+  if (blockfrostProjectId === 'YOUR_BLOCKFROST_PROJECT_ID') {
+    console.error('Please replace YOUR_BLOCKFROST_PROJECT_ID in `getProvider` with your actual Blockfrost Project ID.');
   }
-  
-  return new KoiosProvider(providerUrl);
+
+  return new BlockfrostProvider(blockfrostProjectId, network);
 };
+
+// HELPER FUNCTION: FORMAT CONTENT
+// PURPOSE: CARDANO METADATA STRINGS CANNOT EXCEED 64 BYTES.
+// THIS FUNCTION SPLITS THE TEXT INTO CHUNKS OF 64 CHARACTERS.
+const formatContent = (content) => {
+  if (!content) {
+    return [];
+  }
+  // REGEX SPLITS THE STRING EVERY 64 CHARACTERS
+  return content.match(/.{1,64}/g) || [];
+};
+
 
 /**
  * Build a transaction for note operations using Mesh SDK
@@ -33,6 +36,7 @@ export const getProvider = (network = 'preview') => {
  * @param {string} params.operationType - 'create', 'update', or 'delete'
  * @param {string} params.noteId - Note ID
  * @param {string} params.noteTitle - Note title
+ * @param {string} params.noteContent - Note content
  * @param {number} params.feeAmount - Fee amount in ADA (estimated, not used directly)
  * @param {string} params.network - Network ('preview', 'preprod', 'mainnet')
  * @returns {Promise<string>} Transaction hash
@@ -42,6 +46,7 @@ export const buildAndSendNoteOperationTransaction = async ({
   operationType,
   noteId,
   noteTitle,
+  noteContent,
   noteCategory = 'Uncategorized',
   isPinned = false,
   isStarred = false,
@@ -96,52 +101,26 @@ export const buildAndSendNoteOperationTransaction = async ({
     const createdTimestamp = timeCreated || operationTimestamp;
     const updatedTimestamp = timeUpdated || operationTimestamp;
     const sanitizedTitle = sanitizeText(noteTitle || 'Untitled Note', 50);
-    const sanitizedCategory = sanitizeText(noteCategory || 'Uncategorized', 32) || 'Uncategorized';
+    const contentChunks = formatContent(noteContent);
+    const metadataLabel = 42819;
 
-    // Metadata label 674 (CIP-20 msg array) - shown directly in Lace
-    const messageMetadata = {
-      674: {
-        msg: [
-          `Operation: ${operationType}`,
-          `Note ID: ${noteId?.toString() || 'N/A'}`,
-          `Title: ${sanitizedTitle || 'Untitled Note'}`,
-          `Category: ${sanitizedCategory}`,
-          `Created: ${createdTimestamp}`,
-          `Updated: ${updatedTimestamp}`,
-          `Pinned: ${isPinned ? 'true' : 'false'}`,
-          `Starred: ${isStarred ? 'true' : 'false'}`,
-          `Archived: ${isArchived ? 'true' : 'false'}`,
-          `Deleted: ${isDeleted ? 'true' : 'false'}`
-        ]
-      }
-    };
-
-    // Metadata label 1337 - structured data map for programmatic reads
-    const structuredMetadata = {
-      1337: {
+    const noteMetadata = {
+      [metadataLabel]: {
         map: [
-          { k: { string: 'operation' }, v: { string: operationType } },
+          { k: { string: 'action' }, v: { string: operationType } },
           { k: { string: 'noteId' }, v: { string: noteId?.toString() || '' } },
-          { k: { string: 'noteTitle' }, v: { string: sanitizedTitle || 'Untitled Note' } },
-          { k: { string: 'category' }, v: { string: sanitizedCategory } },
-          { k: { string: 'isPinned' }, v: { string: isPinned ? 'true' : 'false' } },
-          { k: { string: 'isStarred' }, v: { string: isStarred ? 'true' : 'false' } },
-          { k: { string: 'isArchived' }, v: { string: isArchived ? 'true' : 'false' } },
-          { k: { string: 'isDeleted' }, v: { string: isDeleted ? 'true' : 'false' } },
-          { k: { string: 'createdAt' }, v: { string: createdTimestamp } },
-          { k: { string: 'updatedAt' }, v: { string: updatedTimestamp } },
-          { k: { string: 'operationTimestamp' }, v: { string: operationTimestamp } },
+          { k: { string: 'title' }, v: { string: sanitizedTitle } },
+          { k: { string: 'content' }, v: { list: contentChunks.map(c => ({ string: c })) } },
+          { k: { string: 'created_at' }, v: { string: createdTimestamp } },
+          { k: { string: 'updated_at' }, v: { string: updatedTimestamp } },
           { k: { string: 'app' }, v: { string: 'Quill' } }
         ]
       }
     };
 
-    const metadata = {
-      ...messageMetadata,
-      ...structuredMetadata,
-    };
+    const metadata = noteMetadata;
 
-    console.log('Transaction metadata prepared:', metadata);
+    console.log('Transaction metadata prepared:', JSON.stringify(metadata, null, 2));
 
     // For note operations, we'll send a minimal amount (1 ADA) to ourselves
     // This ensures the transaction is valid and includes our metadata
@@ -161,8 +140,7 @@ export const buildAndSendNoteOperationTransaction = async ({
       console.log('Available transaction metadata methods:', txMethods.filter(m => m.toLowerCase().includes('metadata')));
 
       const attachWithMethod = (methodName) => {
-        tx[methodName](674, messageMetadata[674]);
-        tx[methodName](1337, structuredMetadata[1337]);
+        tx[methodName](metadataLabel, metadata[metadataLabel]);
         metadataAttached = true;
         console.log(`Metadata attached via ${methodName}`);
       };
@@ -178,8 +156,7 @@ export const buildAndSendNoteOperationTransaction = async ({
         metadataAttached = true;
         console.log('Metadata set directly on transaction object');
       } else if (tx.txBuilder && typeof tx.txBuilder.attachMetadata === 'function') {
-        tx.txBuilder.attachMetadata(674, messageMetadata[674]);
-        tx.txBuilder.attachMetadata(1337, structuredMetadata[1337]);
+        tx.txBuilder.attachMetadata(metadataLabel, metadata[metadataLabel]);
         metadataAttached = true;
         console.log('Metadata attached via txBuilder.attachMetadata');
       } else {
