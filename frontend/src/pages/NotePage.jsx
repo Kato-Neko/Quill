@@ -24,7 +24,7 @@ export default function NotePage() {
   const params = useParams()
   const navigate = useNavigate()
   const noteId = params.id
-  const { recordNoteCreate, recordNoteUpdate, recordNoteDelete } = useWallet()
+  const { recordNoteCreate, recordNoteUpdate, recordNoteDelete, address, network, linkNoteIdToTx } = useWallet()
 
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
@@ -125,12 +125,13 @@ useEffect(() => {
       // 1. PAY FIRST — Blockchain transaction
       if (!noteId) {
         // CREATE
-        await recordNoteCreate({
+        const txHash = await recordNoteCreate({
           noteId: `temp-${Date.now()}`,
           noteTitle: title.trim(),
+          noteContent: content || "",
           category: category || "Personal",
         });
-  
+
         // 2. Only after payment → save to backend
         const res = await fetch(`${API_BASE_URL}/notes`, {
           method: "POST",
@@ -140,14 +141,21 @@ useEffect(() => {
             content: content.trim() || null,
             category: category || "Personal",
             todos: todos.length > 0 ? todos : null,
+            status: "pending",
+            txHash: txHash || null,
+            walletAddress: address || null,
+            network: network || "preview",
           }),
         });
-  
+
         if (!res.ok) throw new Error("Failed to save note");
-  
+
         const data = await res.json();
         const newId = data.note?.id || data.id;
-  
+        if (txHash && newId) {
+          linkNoteIdToTx(txHash, newId);
+        }
+
         if (options.silent && newId) {
           navigate(`/note/${newId}`, { replace: true });
         } else if (!options.silent) {
@@ -155,12 +163,13 @@ useEffect(() => {
         }
       } else {
         // UPDATE
-        await recordNoteUpdate({
+        const txHash = await recordNoteUpdate({
           noteId,
           noteTitle: title.trim(),
+          noteContent: content || "",
           category: category || "Personal",
         });
-  
+
         const res = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -169,10 +178,17 @@ useEffect(() => {
             content: content.trim() || null,
             category: category || "Personal",
             todos: todos.length > 0 ? todos : null,
+            status: "pending",
+            txHash: txHash || null,
+            walletAddress: address || null,
+            network: network || "preview",
           }),
         });
-  
+
         if (!res.ok) throw new Error("Failed to update note");
+        if (txHash && noteId) {
+          linkNoteIdToTx(txHash, noteId);
+        }
         if (!options.silent) navigate("/");
       }
     } catch (err) {
@@ -200,6 +216,7 @@ useEffect(() => {
       const deleteMetadata = {
         noteId,
         noteTitle,
+        noteContent: content || "",
         category,
         createdAt: noteCreatedAt || new Date().toISOString(),
         updatedAt: noteUpdatedAt || new Date().toISOString(),

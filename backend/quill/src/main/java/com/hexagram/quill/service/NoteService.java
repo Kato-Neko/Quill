@@ -161,8 +161,44 @@ public class NoteService {
         existingNote.setContent(noteDetails.getContent());
         existingNote.setCategory(noteDetails.getCategory());
         existingNote.setTodos(noteDetails.getTodos());
+        if (noteDetails.getStatus() != null) {
+            existingNote.setStatus(noteDetails.getStatus());
+        }
+        if (noteDetails.getTxHash() != null) {
+            existingNote.setTxHash(noteDetails.getTxHash());
+        }
+        if (noteDetails.getWalletAddress() != null) {
+            existingNote.setWalletAddress(noteDetails.getWalletAddress());
+        }
+        if (noteDetails.getNetwork() != null) {
+            existingNote.setNetwork(noteDetails.getNetwork());
+        }
+        if (noteDetails.getConfirmedAt() != null) {
+            existingNote.setConfirmedAt(noteDetails.getConfirmedAt());
+        }
 
         // `updatedAt` will be automatically handled by @UpdateTimestamp
+        return noteRepository.save(existingNote);
+    }
+
+    /**
+     * Update status and tx info.
+     */
+    public Note updateNoteStatus(Long id, String status, String txHash, String network, String walletAddress) {
+        Note existingNote = getNoteByIdOrThrow(id);
+        existingNote.setStatus(status);
+        if (txHash != null) {
+            existingNote.setTxHash(txHash);
+        }
+        if (network != null) {
+            existingNote.setNetwork(network);
+        }
+        if (walletAddress != null) {
+            existingNote.setWalletAddress(walletAddress);
+        }
+        if ("confirmed".equalsIgnoreCase(status) && existingNote.getConfirmedAt() == null) {
+            existingNote.setConfirmedAt(java.time.LocalDateTime.now());
+        }
         return noteRepository.save(existingNote);
     }
 
@@ -295,6 +331,11 @@ public class NoteService {
         dto.setArchived(note.getArchived());
         dto.setDeleted(note.getDeleted());
         dto.setIsPinned(note.getIsPinned());
+        dto.setStatus(note.getStatus());
+        dto.setTxHash(note.getTxHash());
+        dto.setWalletAddress(note.getWalletAddress());
+        dto.setNetwork(note.getNetwork());
+        dto.setConfirmedAt(note.getConfirmedAt());
         dto.setCreatedAt(note.getCreatedAt());
         dto.setUpdatedAt(note.getUpdatedAt());
         if (note.getTodos() != null && !note.getTodos().trim().isEmpty()) {
@@ -322,6 +363,11 @@ public class NoteService {
         note.setArchived(dto.getArchived());
         note.setDeleted(dto.getDeleted());
         note.setIsPinned(dto.getIsPinned());
+        note.setStatus(dto.getStatus());
+        note.setTxHash(dto.getTxHash());
+        note.setWalletAddress(dto.getWalletAddress());
+        note.setNetwork(dto.getNetwork());
+        note.setConfirmedAt(dto.getConfirmedAt());
         // No noteType anymore; both content and todos can coexist
 
         if (dto.getTodos() != null && !dto.getTodos().isEmpty()) {

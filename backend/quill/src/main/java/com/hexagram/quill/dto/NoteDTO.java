@@ -36,6 +36,12 @@ public class NoteDTO {
 
     private java.util.List<com.hexagram.quill.dto.TodoItem> todos;
 
+    private String status;
+    private String txHash;
+    private String walletAddress;
+    private String network;
+    private LocalDateTime confirmedAt;
+
     // Default constructor
     public NoteDTO() {
     }
@@ -133,6 +139,46 @@ public class NoteDTO {
 
     public void setTodos(java.util.List<com.hexagram.quill.dto.TodoItem> todos) {
         this.todos = todos;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getTxHash() {
+        return txHash;
+    }
+
+    public void setTxHash(String txHash) {
+        this.txHash = txHash;
+    }
+
+    public String getWalletAddress() {
+        return walletAddress;
+    }
+
+    public void setWalletAddress(String walletAddress) {
+        this.walletAddress = walletAddress;
+    }
+
+    public String getNetwork() {
+        return network;
+    }
+
+    public void setNetwork(String network) {
+        this.network = network;
+    }
+
+    public LocalDateTime getConfirmedAt() {
+        return confirmedAt;
+    }
+
+    public void setConfirmedAt(LocalDateTime confirmedAt) {
+        this.confirmedAt = confirmedAt;
     }
 
     @Override

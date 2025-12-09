@@ -2,9 +2,9 @@ package com.hexagram.quill.controller;
 
 import com.hexagram.quill.dto.koios.KoiosAddressInfoRequest;
 import com.hexagram.quill.dto.koios.KoiosTxInfoRequest;
+import com.hexagram.quill.dto.koios.KoiosAddressTxsRequest;
 import java.util.HashMap;
 import java.util.Map;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -58,6 +58,16 @@ public class KoiosProxyController {
         payload.put("_tx_hashes", request.getTxHashes());
 
         return forwardToKoios(resolveBaseUrl(request.getNetwork()) + "/tx_info", payload);
+    }
+
+    @PostMapping("/address-txs")
+    public ResponseEntity<?> proxyAddressTxs(@RequestBody KoiosAddressTxsRequest request) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("_addresses", request.getAddresses());
+        if (request.getLimit() != null) {
+            payload.put("_limit", request.getLimit());
+        }
+        return forwardToKoios(resolveBaseUrl(request.getNetwork()) + "/address_txs", payload);
     }
 
     private ResponseEntity<?> forwardToKoios(String url, Object payload) {

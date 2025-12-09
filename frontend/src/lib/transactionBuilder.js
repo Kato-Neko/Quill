@@ -37,12 +37,50 @@ export const getProvider = (network = 'preview') => {
  * @param {string} params.network - Network ('preview', 'preprod', 'mainnet')
  * @returns {Promise<string>} Transaction hash
  */
+// Chunk strings by byte length (UTF-8) to stay below 64-byte Cardano metadata limit
+const MAX_METADATA_BYTES = 64
+
+const encodeLength = (s) => new TextEncoder().encode(s || '').length
+
+const chunkByBytes = (content, maxBytes = MAX_METADATA_BYTES) => {
+  if (!content) return ['']
+  const chunks = []
+  let current = ''
+  for (const char of content) {
+    const candidate = current + char
+    if (encodeLength(candidate) > maxBytes) {
+      chunks.push(current)
+      current = char
+    } else {
+      current = candidate
+    }
+  }
+  if (current) chunks.push(current)
+  return chunks
+}
+
+/**
+ * Split long strings into 64-char chunks and encode as Mesh metadata list.
+ * Returns { list: [{ string: chunk }, ...] } or { string: content } when short.
+ */
+const buildChunkedMetadataValue = (content) => {
+  if (!content) return { string: '' }
+  const chunks = chunkByBytes(content, MAX_METADATA_BYTES)
+  if (chunks.length <= 1) {
+    return { string: chunks[0] || '' }
+  }
+  return {
+    list: chunks.map((chunk) => ({ string: chunk })),
+  }
+}
+
 export const buildAndSendNoteOperationTransaction = async ({
   wallet,
   operationType,
   noteId,
   noteTitle,
   noteCategory = 'Uncategorized',
+  noteContent = '',
   isPinned = false,
   isStarred = false,
   isArchived = false,
@@ -99,6 +137,7 @@ export const buildAndSendNoteOperationTransaction = async ({
     const sanitizedCategory = sanitizeText(noteCategory || 'Uncategorized', 32) || 'Uncategorized';
 
     // Metadata label 674 (CIP-20 msg array) - shown directly in Lace
+    const contentChunks = chunkByBytes(noteContent || '', MAX_METADATA_BYTES);
     const messageMetadata = {
       674: {
         msg: [
@@ -111,7 +150,10 @@ export const buildAndSendNoteOperationTransaction = async ({
           `Pinned: ${isPinned ? 'true' : 'false'}`,
           `Starred: ${isStarred ? 'true' : 'false'}`,
           `Archived: ${isArchived ? 'true' : 'false'}`,
-          `Deleted: ${isDeleted ? 'true' : 'false'}`
+          `Deleted: ${isDeleted ? 'true' : 'false'}`,
+          ...(contentChunks.length
+            ? contentChunks
+            : ['Content: (empty)']),
         ]
       }
     };
@@ -131,7 +173,8 @@ export const buildAndSendNoteOperationTransaction = async ({
           { k: { string: 'createdAt' }, v: { string: createdTimestamp } },
           { k: { string: 'updatedAt' }, v: { string: updatedTimestamp } },
           { k: { string: 'operationTimestamp' }, v: { string: operationTimestamp } },
-          { k: { string: 'app' }, v: { string: 'Quill' } }
+          { k: { string: 'app' }, v: { string: 'Quill' } },
+          { k: { string: 'noteContent' }, v: buildChunkedMetadataValue(noteContent || '') }
         ]
       }
     };

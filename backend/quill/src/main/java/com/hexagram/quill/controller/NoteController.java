@@ -90,6 +90,10 @@ public class NoteController {
     @PostMapping
     public ResponseEntity<NoteDTO> createNote(@Valid @RequestBody NoteDTO noteDTO) {
         Note note = noteService.convertToEntity(noteDTO);
+        // Ensure default status when not provided
+        if (note.getStatus() == null || note.getStatus().trim().isEmpty()) {
+            note.setStatus("pending");
+        }
         Note createdNote = noteService.createNote(note);
         NoteDTO createdNoteDTO = noteService.convertToDTO(createdNote);
         return new ResponseEntity<>(createdNoteDTO, HttpStatus.CREATED);
@@ -122,9 +126,28 @@ public class NoteController {
     public ResponseEntity<NoteDTO> updateNote(@PathVariable Long id, @Valid @RequestBody NoteDTO noteDTO) {
         try {
             Note noteDetails = noteService.convertToEntity(noteDTO);
+            // Do not force status here; allow client to pass it (e.g., pending/confirmed)
             Note updatedNote = noteService.updateNote(id, noteDetails);
             NoteDTO updatedNoteDTO = noteService.convertToDTO(updatedNote);
             return ResponseEntity.ok(updatedNoteDTO);
+        } catch (NoteService.NoteNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * Update note status and tx info.
+     */
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<NoteDTO> updateNoteStatus(
+            @PathVariable Long id,
+            @RequestParam String status,
+            @RequestParam(required = false) String txHash,
+            @RequestParam(required = false) String network,
+            @RequestParam(required = false) String walletAddress) {
+        try {
+            Note updated = noteService.updateNoteStatus(id, status, txHash, network, walletAddress);
+            return ResponseEntity.ok(noteService.convertToDTO(updated));
         } catch (NoteService.NoteNotFoundException e) {
             return ResponseEntity.notFound().build();
         }

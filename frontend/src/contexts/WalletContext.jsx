@@ -447,7 +447,85 @@ export function WalletProvider({ children }) {
     return updatedTransaction;
   };
 
+  // Attach a real noteId to a transaction once the backend note is created
+  const linkNoteIdToTx = (txHash, noteId) => {
+    if (!txHash || !noteId) return;
+    saveTransactions((prev = []) =>
+      prev.map((tx) =>
+        normalizeTxHash(tx.txHash) === normalizeTxHash(txHash)
+          ? { ...tx, noteId: noteId.toString(), updatedAt: new Date().toISOString() }
+          : tx
+      )
+    );
+  };
+
   const normalizeTxHash = (hash) => (typeof hash === 'string' ? hash.trim() : hash);
+
+  const updateNoteStatusBackend = async (noteId, status, txHash, txNetwork, walletAddr) => {
+    if (!noteId) return;
+    try {
+      const params = new URLSearchParams();
+      params.append('status', status);
+      if (txHash) params.append('txHash', txHash);
+      if (txNetwork) params.append('network', txNetwork);
+      if (walletAddr) params.append('walletAddress', walletAddr);
+
+      await fetch(`${API_BASE_URL}/notes/${noteId}/status?${params.toString()}`, {
+        method: 'PATCH',
+      });
+    } catch (error) {
+      console.error('Failed to update note status in backend:', error);
+    }
+  };
+
+  /**
+   * Background check: fetch tx info for pending transactions and mark confirmed when found.
+   */
+  const checkPendingTransactions = async () => {
+    const pendingTxs = transactions.filter(
+      (tx) => tx.status === 'pending' && tx.txHash && !tx.backendSynced
+    );
+    if (!pendingTxs.length) return;
+
+    const txHashes = pendingTxs.map((tx) => normalizeTxHash(tx.txHash));
+    try {
+      const data = await callKoiosProxy(network, 'tx-info', { txHashes });
+      if (!Array.isArray(data)) return;
+
+      for (const txInfo of data) {
+        const txHash = normalizeTxHash(txInfo?.tx_hash);
+        if (!txHash) continue;
+        const matched = pendingTxs.find((tx) => normalizeTxHash(tx.txHash) === txHash);
+        if (!matched) continue;
+
+        const feeADA = txInfo?.fee ? parseInt(txInfo.fee, 10) / 1_000_000 : null;
+
+        const updatedTx = updateTransaction(matched.id, {
+          status: 'confirmed',
+          amount: feeADA !== null ? feeADA : matched.amount,
+          feeSource: feeADA !== null ? 'blockchain' : matched.feeSource,
+          backendSynced: false,
+        });
+
+        if (updatedTx) {
+          persistTransactionToBackend(updatedTx);
+        }
+
+        // Update related note status if available
+        if (matched.noteId) {
+          updateNoteStatusBackend(
+            matched.noteId,
+            'confirmed',
+            txHash,
+            matched.network || network,
+            matched.senderAddress || address
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check pending transactions:', error);
+    }
+  };
 
   const persistTransactionToBackend = async (transaction) => {
     if (!transaction?.txHash || transaction.status !== 'confirmed') return;
@@ -529,6 +607,7 @@ export function WalletProvider({ children }) {
 const recordNoteCreate = async ({
   noteId,
   noteTitle,
+  noteContent,
   category,
   createdAt,
   updatedAt,
@@ -565,6 +644,7 @@ const recordNoteCreate = async ({
       noteId,
       noteTitle,
       noteCategory: metadata.category,
+      noteContent,
       isPinned: metadata.isPinned,
       isStarred: metadata.isStarred,
       isArchived: metadata.isArchived,
@@ -588,7 +668,7 @@ const recordNoteCreate = async ({
       operation: 'note_create',
       noteId: noteId.toString(),
       noteTitle,
-      status: 'confirmed',
+      status: 'pending',
       txHash,
       network,
       feeSource: 'estimated',
@@ -612,6 +692,7 @@ const recordNoteCreate = async ({
 const recordNoteUpdate = async ({
   noteId,
   noteTitle,
+  noteContent,
   category,
   createdAt,
   updatedAt,
@@ -638,6 +719,7 @@ const recordNoteUpdate = async ({
       noteId,
       noteTitle,
       noteCategory: metadata.category,
+      noteContent,
       isPinned: metadata.isPinned,
       isStarred: metadata.isStarred,
       isArchived: metadata.isArchived,
@@ -661,7 +743,7 @@ const recordNoteUpdate = async ({
       operation: 'note_update',
       noteId: noteId.toString(),
       noteTitle,
-      status: 'confirmed',
+      status: 'pending',
       txHash,
       network,
       feeSource: 'estimated',
@@ -685,6 +767,7 @@ const recordNoteUpdate = async ({
 const recordNoteDelete = async ({
   noteId,
   noteTitle,
+  noteContent,
   category,
   createdAt,
   updatedAt,
@@ -713,6 +796,7 @@ const recordNoteDelete = async ({
       noteId,
       noteTitle,
       noteCategory: metadata.category,
+      noteContent,
       isPinned: metadata.isPinned,
       isStarred: metadata.isStarred,
       isArchived: metadata.isArchived,
@@ -736,7 +820,7 @@ const recordNoteDelete = async ({
       operation: 'note_delete',
       noteId: noteId.toString(),
       noteTitle,
-      status: 'confirmed',
+      status: 'pending',
       txHash,
       network,
       feeSource: 'estimated',
@@ -824,10 +908,84 @@ const recordNoteDelete = async ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, transactions]);
 
+  // Background worker: poll Koios for pending tx confirmations every 20s
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      checkPendingTransactions();
+    }, 20000);
+    return () => clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, network]);
+
   // Delete a transaction
   const deleteTransaction = (id) => {
     const updated = transactions.filter(tx => tx.id !== id);
     saveTransactions(updated);
+  };
+
+  /**
+   * Restore notes from on-chain metadata for the current wallet.
+   * Uses Koios address_txs to list hashes, then tx_info to fetch metadata (label 1337).
+   * Returns a list of reconstructed notes; caller can decide how to persist.
+   */
+  const restoreNotesFromChain = async () => {
+    if (!address) return [];
+
+    try {
+      // Step 1: fetch tx hashes for this address
+      const txList = await callKoiosProxy(network, 'address-txs', {
+        addresses: [address],
+        limit: 50, // fetch recent 50; can be increased if needed
+      });
+      const txHashes = Array.isArray(txList)
+        ? txList.map((tx) => normalizeTxHash(tx?.tx_hash)).filter(Boolean)
+        : [];
+
+      if (!txHashes.length) return [];
+
+      // Step 2: fetch tx info for those hashes
+      const data = await callKoiosProxy(network, 'tx-info', { txHashes });
+      if (!Array.isArray(data)) return [];
+
+      const restored = [];
+      for (const txInfo of data) {
+        const metadata = txInfo?.metadata;
+        const label1337 = metadata && metadata['1337'];
+        if (!label1337?.map) continue;
+
+        const asObj = {};
+        for (const entry of label1337.map) {
+          const key = entry?.k?.string;
+          const value = entry?.v;
+          if (!key || !value) continue;
+          if (value.string !== undefined) {
+            asObj[key] = value.string;
+          } else if (Array.isArray(value.list)) {
+            asObj[key] = value.list.map((v) => v?.string || '').join('');
+          }
+        }
+
+        if (asObj.noteId || asObj.noteTitle) {
+          restored.push({
+            noteId: asObj.noteId,
+            title: asObj.noteTitle || 'Untitled',
+            content: asObj.noteContent || '',
+            category: asObj.category || 'Uncategorized',
+            isPinned: asObj.isPinned === 'true',
+            isStarred: asObj.isStarred === 'true',
+            isArchived: asObj.isArchived === 'true',
+            isDeleted: asObj.isDeleted === 'true',
+            createdAt: asObj.createdAt,
+            updatedAt: asObj.updatedAt,
+            txHash: txInfo?.tx_hash,
+          });
+        }
+      }
+      return restored;
+    } catch (error) {
+      console.error('Failed to restore notes from chain:', error);
+      return [];
+    }
   };
 
   // Build and send a transaction using wallet's built-in transaction building
@@ -975,7 +1133,9 @@ const recordNoteDelete = async ({
       setNetwork,
       addTransaction,
       updateTransaction,
+      linkNoteIdToTx,
       deleteTransaction,
+      restoreNotesFromChain,
       recordNoteCreate,
       recordNoteUpdate,
       recordNoteDelete

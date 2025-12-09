@@ -52,6 +52,21 @@ public class Note {
     @Column(name = "todos", columnDefinition = "TEXT")
     private String todos;
 
+    @Column(name = "status", length = 20)
+    private String status = "pending";
+
+    @Column(name = "tx_hash", length = 128)
+    private String txHash;
+
+    @Column(name = "wallet_address", length = 255)
+    private String walletAddress;
+
+    @Column(name = "network", length = 20)
+    private String network;
+
+    @Column(name = "confirmed_at")
+    private LocalDateTime confirmedAt;
+
     // Default constructor
     public Note() {
     }
@@ -149,6 +164,46 @@ public class Note {
 
     public void setTodos(String todos) {
         this.todos = todos;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getTxHash() {
+        return txHash;
+    }
+
+    public void setTxHash(String txHash) {
+        this.txHash = txHash;
+    }
+
+    public String getWalletAddress() {
+        return walletAddress;
+    }
+
+    public void setWalletAddress(String walletAddress) {
+        this.walletAddress = walletAddress;
+    }
+
+    public String getNetwork() {
+        return network;
+    }
+
+    public void setNetwork(String network) {
+        this.network = network;
+    }
+
+    public LocalDateTime getConfirmedAt() {
+        return confirmedAt;
+    }
+
+    public void setConfirmedAt(LocalDateTime confirmedAt) {
+        this.confirmedAt = confirmedAt;
     }
 
     @Override
